@@ -47,7 +47,8 @@ CREATE TABLE `clan_role_discord_roles` (
   `id` int NOT NULL AUTO_INCREMENT,
   `role` enum('member','elder','coleader','leader') NOT NULL,
   `discord_role_id` bigint unsigned NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `role` (`role`,`discord_role_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -62,9 +63,6 @@ CREATE TABLE `clans` (
   `id` int NOT NULL AUTO_INCREMENT,
   `tag` varchar(16) NOT NULL,
   `name` varchar(50) NOT NULL,
-  `track_stats` tinyint(1) NOT NULL DEFAULT '0',
-  `send_reminders` tinyint(1) NOT NULL DEFAULT '0',
-  `assign_strikes` tinyint(1) NOT NULL DEFAULT '0',
   `discord_role_id` bigint unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `tag` (`tag`)
@@ -102,6 +100,25 @@ CREATE TABLE `kicks` (
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `kicks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `primary_clans`
+--
+
+DROP TABLE IF EXISTS `primary_clans`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `primary_clans` (
+  `clan_id` int NOT NULL,
+  `track_stats` tinyint(1) NOT NULL,
+  `send_reminders` tinyint(1) NOT NULL,
+  `assign_strikes` tinyint(1) NOT NULL,
+  `strike_type` enum('decks','medals') NOT NULL,
+  `strike_threshold` int NOT NULL,
+  PRIMARY KEY (`clan_id`),
+  CONSTRAINT `primary_clans_ibfk_1` FOREIGN KEY (`clan_id`) REFERENCES `clans` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -210,6 +227,22 @@ CREATE TABLE `seasons` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `special_discord_roles`
+--
+
+DROP TABLE IF EXISTS `special_discord_roles`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `special_discord_roles` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `role` enum('visitor','new','rules') NOT NULL,
+  `discord_role_id` bigint unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `role` (`role`,`discord_role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `users`
 --
 
@@ -230,6 +263,21 @@ CREATE TABLE `users` (
   UNIQUE KEY `discord_id` (`discord_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `variables`
+--
+
+DROP TABLE IF EXISTS `variables`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `variables` (
+  `initialized` tinyint(1) NOT NULL DEFAULT '0',
+  `guild_id` bigint unsigned NOT NULL DEFAULT '0',
+  `last_check` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`initialized`,`guild_id`,`last_check`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -240,4 +288,4 @@ CREATE TABLE `users` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2022-05-11  6:27:15
+-- Dump completed on 2022-05-12  2:21:47

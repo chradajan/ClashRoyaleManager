@@ -9,7 +9,13 @@ setup(
     name='ClashRoyaleManager',
     version='0.0.0',
     install_requires=requirements,
-    packages=['ClashRoyaleManager'],
+    packages=[
+        'ClashRoyaleManager',
+        'cogs',
+        'config',
+        'groups',
+        'utils',
+    ],
     entry_points={
         'console_scripts': [
             'ClashRoyaleManager = ClashRoyaleManager.__main__:main'
