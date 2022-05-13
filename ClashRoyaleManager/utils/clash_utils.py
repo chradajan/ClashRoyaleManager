@@ -6,6 +6,7 @@ import requests
 from typing import Union
 
 from config.credentials import CLASH_API_KEY
+from log.logger import LOG, log_message
 from utils.custom_types import ClanRole, ClashData, RiverRaceInfo
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
@@ -71,12 +72,17 @@ def get_total_cards() -> int:
     now = datetime.datetime.utcnow()
 
     if get_total_cards.last_check_time is None or (now - get_total_cards.last_check_time).days > 0:
+        LOG.info("Getting total cards available in game")
         req = requests.get(url="https://api.clashroyale.com/v1/cards",
                            headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
 
         if req.status_code == 200:
             get_total_cards.cached_total = len(req.json()["items"])
             get_total_cards.last_check_time = now
+        else:
+            LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+    else:
+        LOG.info("Getting cached total cards available in game")
 
     return get_total_cards.cached_total
 
@@ -94,10 +100,12 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
         GeneralAPIError: Something went wrong with the request.
         ResourceNotFound: Invalid tag was provided.
     """
+    LOG.info(f"Getting Clash Royale data of user {tag}")
     req = requests.get(url=f"https://api.clashroyale.com/v1/players/%23{tag[1:]}",
                        headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
 
     if req.status_code != 200:
+        LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
         if req.status_code == 404:
             raise ResourceNotFound
         else:
@@ -141,10 +149,12 @@ def get_clan_name(tag: str) -> str:
         GeneralAPIError: Something went wrong with the request.
         ResourceNotFound: Invalid tag was provided.
     """
+    LOG.info(f"Getting name of clan {tag}")
     req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}",
                        headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
 
     if req.status_code != 200:
+        LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
         if req.status_code == 404:
             raise ResourceNotFound
         else:
@@ -167,10 +177,12 @@ def get_current_river_race_info(tag: str) -> RiverRaceInfo:
         GeneralAPIError: Something went wrong with the request.
         ResourceNotFound: Invalid tag was provided.
     """
+    LOG.info(f"Getting current river race info for clan {tag}")
     req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}/currentriverrace",
                        headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
 
     if req.status_code != 200:
+        LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
         if req.status_code == 404:
             raise ResourceNotFound
         else:
@@ -182,6 +194,7 @@ def get_current_river_race_info(tag: str) -> RiverRaceInfo:
                            headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
 
     if req.status_code != 200:
+        LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
         if req.status_code == 404:
             raise ResourceNotFound
         else:

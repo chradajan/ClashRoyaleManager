@@ -1,0 +1,31 @@
+{
+    "version": 1,
+
+    "formatters": {
+        "main_formatter": {
+            "format": "%(asctime)s.%(msecs)03d |:| %(levelname)s: %(filename)s:%(lineno)s    %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S"
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "main_formatter",
+            "level": "ERROR"
+        },
+        "file_normal": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "main_formatter",
+            "level": "DEBUG",
+            "filename": "log/logs/log.log",
+            "maxBytes": 33554432,
+            "backupCount": 4
+        }
+    },
+    "loggers": {
+        "main_logger": {
+            "handlers": ["console", "file_normal"],
+            "level": "DEBUG"
+        }
+    }
+}

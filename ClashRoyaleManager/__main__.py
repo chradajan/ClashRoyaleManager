@@ -7,6 +7,7 @@ import utils.db_utils as db_utils
 from config.credentials import BOT_TOKEN
 from groups.member_commands import MemberCommands
 from groups.setup_commands import SetupCommands
+from log.logger import LOG
 
 def main():
     """Start ClashRoyaleManager."""
@@ -38,6 +39,7 @@ def main():
     @bot.event
     async def on_ready():
         await bot.tree.sync(guild=guild)
+        LOG.info("Bot started")
         print("Bot Ready")
 
     bot.run(BOT_TOKEN)
