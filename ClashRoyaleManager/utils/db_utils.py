@@ -17,6 +17,7 @@ from utils.custom_types import (
     ClanRole,
     ClashData,
     PrimaryClan,
+    SpecialChannel,
     SpecialRole,
     StrikeCriteria,
 )
@@ -262,6 +263,47 @@ def get_special_role_id(special_role: SpecialRole) -> Union[int, None]:
     database.close()
     role_id = query_result["discord_role_id"] if query_result is not None else None
     return role_id
+
+
+def get_special_channel_id(special_channel: SpecialChannel) -> Union[int, None]:
+    """Get the Discord channel ID associated with the specified special channel.
+
+    Args:
+        special_channel: Special channel to get associated Discord channel ID of.
+
+    Returns:
+        ID of associated Discord channel, or None if no Discord channel is assigned.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_channel_id FROM special_discord_channels WHERE channel = %s", (special_channel.value))
+    query_result = cursor.fetchone()
+    database.close()
+    channel_id = query_result["discord_channel_id"] if query_result is not None else None
+    return channel_id
+
+
+def get_clan_affiliated_role_id(tag: str) -> Union[int, None]:
+    """Get the Discord role ID of the role for members of the specified clan.
+
+    Args:
+        tag: Tag of clan to get role for.
+
+    Returns:
+        ID of role for specified clan. If clan is not in database, return Visitor role ID. If no Visitor role is set, then None.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_role_id FROM clans WHERE tag = %s", (tag))
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        cursor.execute("SELECT discord_role_id FROM special_discord_roles WHERE role = %s", (SpecialRole.Visitor.value))
+        query_result = cursor.fetchone()
+
+        if query_result is None:
+            query_result = {"discord_role_id": None}
+
+    database.close()
+    return query_result["discord_role_id"]
 
 
 def get_primary_clans() -> List[PrimaryClan]:

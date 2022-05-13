@@ -8,10 +8,13 @@ from config.credentials import BOT_TOKEN
 from groups.member_commands import MemberCommands
 from groups.setup_commands import SetupCommands
 from log.logger import LOG
+from utils.channel_manager import CHANNEL
+from utils.role_manager import ROLE
 
 def main():
     """Start ClashRoyaleManager."""
-    guild = discord.Object(id=db_utils.get_guild_id())
+    guild_id = db_utils.get_guild_id()
+    guild = discord.Object(id=guild_id)
     intents = discord.Intents.default()
     intents.members = True
     activity = discord.Game(name="Clash Royale")
@@ -39,6 +42,8 @@ def main():
     @bot.event
     async def on_ready():
         await bot.tree.sync(guild=guild)
+        CHANNEL.initialize_channels(bot.get_guild(guild_id))
+        ROLE.initialize_roles(bot.get_guild(guild_id))
         LOG.info("Bot started")
         print("Bot Ready")
 
