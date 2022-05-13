@@ -6,7 +6,7 @@ import requests
 from typing import Union
 
 from config.credentials import CLASH_API_KEY
-from utils.custom_types import ClanRole, ClashData
+from utils.custom_types import ClanRole, ClashData, RiverRaceInfo
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
 def process_clash_royale_tag(input: str) -> Union[str, None]:
@@ -35,6 +35,24 @@ def process_clash_royale_tag(input: str) -> Union[str, None]:
             processed_tag = '#' + matched_tag.group(0)
 
     return processed_tag
+
+
+def battletime_to_datetime(battle_time: str) -> datetime.datetime:
+    """Convert a time string provided by the API into a datetime object.
+
+    Args:
+        battle_time: API time string in the form of "yyyymmddThhmmss.000Z"
+
+    Returns:
+        Datetime object of API time string.
+    """
+    year = int(battle_time[:4])
+    month = int(battle_time[4:6])
+    day = int(battle_time[6:8])
+    hour = int(battle_time[9:11])
+    minute = int(battle_time[11:13])
+    second = int(battle_time[13:15])
+    return datetime.datetime(year, month, day, hour, minute, second, tzinfo=datetime.timezone.utc)
 
 
 def get_total_cards() -> int:
@@ -73,8 +91,8 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
         A dictionary of relevant Clash Royale information.
 
     Raises:
-        ResourceNotFound: Invalid tag was provided.
         GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
     """
     req = requests.get(url=f"https://api.clashroyale.com/v1/players/%23{tag[1:]}",
                        headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
@@ -108,3 +126,79 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
         clash_data["found_cards"] += 1
 
     return clash_data
+
+
+def get_clan_name(tag: str) -> str:
+    """Get name of clan from its tag.
+
+    Args:
+        tag: Tag of clan to get name of.
+
+    Returns:
+        Name of clan.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}",
+                       headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+    if req.status_code != 200:
+        if req.status_code == 404:
+            raise ResourceNotFound
+        else:
+            raise GeneralAPIError
+
+    json_obj = req.json()
+    return json_obj["name"]
+
+
+def get_current_river_race_info(tag: str) -> RiverRaceInfo:
+    """Get information about the current River Race of the specified clan.
+
+    Args:
+        tag: Tag of clan to get River Race data of.
+
+    Returns:
+        River Race data of specified clan.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}/currentriverrace",
+                       headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+    if req.status_code != 200:
+        if req.status_code == 404:
+            raise ResourceNotFound
+        else:
+            raise GeneralAPIError
+
+    race_info = req.json()
+
+    req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}/riverracelog?limit=1",
+                           headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+    if req.status_code != 200:
+        if req.status_code == 404:
+            raise ResourceNotFound
+        else:
+            raise GeneralAPIError
+
+    last_race = req.json()
+    last_race_end_time = battletime_to_datetime(last_race["items"][0]["createdDate"])
+
+    river_race_info: RiverRaceInfo = {
+        "tag": race_info["clan"]["tag"],
+        "name": race_info["clan"]["name"],
+        "start_time": last_race_end_time,
+        "colosseum_week": race_info["periodType"].lower() == "colosseum",
+        "completed_saturday": (race_info["periodIndex"] % 7 == 6
+                                and race_info["clan"]["fame"] >= 10000
+                                and race_info["periodType"].lower() != "colosseum"),
+        "week": (race_info["periodIndex"] // 7) + 1,
+        "clans": [(clan["tag"], clan["name"]) for clan in race_info["clans"]]
+    }
+    return river_race_info

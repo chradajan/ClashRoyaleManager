@@ -235,7 +235,7 @@ DROP TABLE IF EXISTS `special_discord_roles`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `special_discord_roles` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `role` enum('visitor','new','rules') NOT NULL,
+  `role` enum('visitor','new','rules','admin') NOT NULL,
   `discord_role_id` bigint unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `role` (`role`,`discord_role_id`)
@@ -288,4 +288,4 @@ CREATE TABLE `variables` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2022-05-12  2:21:47
+-- Dump completed on 2022-05-13  3:59:00

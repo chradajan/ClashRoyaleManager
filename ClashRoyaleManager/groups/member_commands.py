@@ -7,9 +7,6 @@ import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
-guild = discord.Object(id=db_utils.get_guild_id())
-
-@app_commands.guilds(guild)
 class MemberCommands(app_commands.Group):
     """Commands available to any registered users."""
 

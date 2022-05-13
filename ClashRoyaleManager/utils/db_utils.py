@@ -1,10 +1,11 @@
 """Functions that interface with the database."""
 
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import discord
 import pymysql
 
+import utils.clash_utils as clash_utils
 import utils.discord_utils as discord_utils
 from config.credentials import (
     IP,
@@ -12,7 +13,13 @@ from config.credentials import (
     PASSWORD,
     DATABASE_NAME
 )
-from utils.custom_types import ClashData, SpecialRoles
+from utils.custom_types import (
+    ClanRole,
+    ClashData,
+    PrimaryClan,
+    SpecialRole,
+    StrikeCriteria,
+)
 
 
 def get_database_connection() -> Tuple[pymysql.Connection, pymysql.cursors.DictCursor]:
@@ -26,11 +33,23 @@ def get_database_connection() -> Tuple[pymysql.Connection, pymysql.cursors.DictC
     return (database, cursor)
 
 
+def is_initialized() -> bool:
+    """Check if database is fully initialized.
+
+    Returns:
+        Whether database is initialized.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT initialized FROM variables")
+    database.close()
+    return cursor.fetchone()["initialized"]
+
+
 def get_guild_id() -> int:
     """Get saved Discord guild id.
 
     Returns:
-        id of saved Discord guild.
+        ID of saved Discord guild.
     """
     database, cursor = get_database_connection()
     cursor.execute("SELECT guild_id FROM variables")
@@ -39,34 +58,34 @@ def get_guild_id() -> int:
     return query_result["guild_id"]
 
 
-def get_visitor_role_id() -> int:
-    """Get id of Visitor role.
-
-    Returns:
-        id of Visitor role.
-    """
-    database, cursor = get_database_connection()
-    cursor.execute("SELECT discord_role_id FROM special_discord_roles WHERE role = %s", (SpecialRoles.VISITOR.value))
-    visitor_role_id = cursor.fetchone()["discord_role_id"]
-    database.close()
-    return visitor_role_id
-
-
-def insert_clan(tag: str, name: str) -> int:
-    """Insert a new clan into the clans table. Defaults to associating clan with the Visitor role.
+def insert_clan(tag: str, name: Optional[str]=None, discord_role_id: Optional[int]=None) -> int:
+    """Insert a new clan into the clans table.
 
     If the clan already exists, 
 
     Args:
         tag: Tag of clan to insert.
-        name: Name of clan to insert.
+        name: Name of clan to insert. If not provided, get the name from the API.
+        discord_role_id: Discord role to assign to members of this clan. Defaults to Visitor role.
 
     Returns:
-        id of clan being inserted.
+        ID of clan being inserted.
+
+    Raises:
+        GeneralAPIError: Clan does not already exist in clans table and an error was encountered getting its name from the API.
+        ResourceNotFound: Clan does not already exist in clans table and is an invalid clan tag.
     """
     database, cursor = get_database_connection()
-    cursor.execute("INSERT IGNORE INTO clans VALUES\
-                    (DEFAULT, %s, %s, %s)", (tag, name, get_visitor_role_id()))
+
+    if name is None:
+        name = clash_utils.get_clan_name(tag)
+
+    if discord_role_id is None:
+        discord_role_id = get_special_role_id(SpecialRole.Visitor)
+
+    cursor.execute("INSERT INTO clans (tag, name, discord_role_id) VALUES (%s, %s, %s)\
+                    ON DUPLICATE KEY UPDATE name = %s, discord_role_id = %s",
+                   (tag, name, discord_role_id, name, discord_role_id))
     cursor.execute("SELECT id FROM clans WHERE tag = %s", (tag))
     id = cursor.fetchone()["id"]
     database.commit()
@@ -209,3 +228,66 @@ def get_user_in_database(search_key: Union[int, str]) -> List[Tuple[str, str, st
     database.close()
     results = [(user["player_name"], user["player_tag"], user["clan_name"]) for user in query_result]
     return results
+
+
+def get_clan_role_id(clan_role: ClanRole) -> Union[int, None]:
+    """Get the Discord role ID associated with the specified clan role.
+
+    Args:
+        clan_role: Clan role to get associated Discord role ID of.
+
+    Returns:
+        ID of associated Discord role, or None if no Discord role is assigned.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_role_id FROM clan_role_discord_roles WHERE role = %s", (clan_role.value))
+    query_result = cursor.fetchone()
+    database.close()
+    role_id = query_result["discord_role_id"] if query_result is not None else None
+    return role_id
+
+
+def get_special_role_id(special_role: SpecialRole) -> Union[int, None]:
+    """Get the Discord role ID associated with the specified special role.
+
+    Args:
+        special_role: Special role to get associated Discord role ID of.
+
+    Returns:
+        ID of associated Discord role, or None if no Discord role is assigned.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_role_id FROM special_discord_roles WHERE role = %s", (special_role.value))
+    query_result = cursor.fetchone()
+    database.close()
+    role_id = query_result["discord_role_id"] if query_result is not None else None
+    return role_id
+
+
+def get_primary_clans() -> List[PrimaryClan]:
+    """Get all primary clans.
+
+    Returns:
+        List of primary clans.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT * FROM primary_clans INNER JOIN clans ON primary_clans.clan_id = clans.id")
+    query_result = cursor.fetchall()
+    database.close()
+    primary_clans: List[PrimaryClan] = []
+
+    for clan in query_result:
+        clan_data: PrimaryClan = {
+            "tag": clan["tag"],
+            "name": clan["name"],
+            "id": clan["id"],
+            "discord_role_id": clan["discord_role_id"],
+            "track_stats": clan["track_stats"],
+            "send_reminders": clan["send_reminders"],
+            "assign_strikes": clan["assign_strikes"],
+            "strike_type": StrikeCriteria(clan["strike_type"]),
+            "strike_threshold": clan["strike_threshold"]
+        }
+        primary_clans.append(clan_data)
+    
+    return primary_clans
