@@ -33,6 +33,12 @@ class SpecialRole(Enum):
     Admin = "admin"
 
 
+class SpecialChannel(Enum):
+    """Enum of relevant Discord channels."""
+    Strikes = "strikes"
+    Reminders = "reminders"
+
+
 class StrikeCriteria(Enum):
     """Enum of criteria used to determine who receives automated strikes."""
     Decks = "decks"

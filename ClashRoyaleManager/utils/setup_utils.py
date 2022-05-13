@@ -8,62 +8,51 @@ import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from utils.custom_types import (
     ClanRole,
+    SpecialChannel,
     SpecialRole,
     StrikeCriteria
 )
 
-def set_clan_role(clan_role: ClanRole, discord_role: discord.Role) -> Union[int, None]:
+def set_clan_role(clan_role: ClanRole, discord_role: discord.Role):
     """Associate a clan role with a Discord role.
 
     Args:
         clan_role: Clan role to assign Discord role to.
         discord_role: Discord role to assign to clan role.
-
-    Returns:
-        ID of previously associated Discord role if there was one, else None.
     """
     database, cursor = db_utils.get_database_connection()
-    cursor.execute("SELECT discord_role_id FROM clan_role_discord_roles WHERE role = %s", (clan_role.value))
-    query_result = cursor.fetchone()
-
-    if query_result is None:
-        cursor.execute("INSERT INTO clan_role_discord_roles VALUES (DEFAULT, %s, %s)", (clan_role.value, discord_role.id))
-        former_id = None
-    else:
-        cursor.execute("UPDATE clan_role_discord_roles SET discord_role_id = %s WHERE role = %s",
-                       (discord_role.id, clan_role.value))
-        former_id = query_result["discord_role_id"]
-
+    cursor.execute("INSERT INTO clan_role_discord_roles VALUES (DEFAULT, %s, %s) ON DUPLICATE KEY UPDATE discord_role_id = %s",
+                   (clan_role.value, discord_role.id, discord_role.id))
     database.commit()
     database.close()
-    return former_id
 
 
-def set_special_role(special_role: SpecialRole, discord_role: discord.Role) -> Union[int, None]:
+def set_special_role(special_role: SpecialRole, discord_role: discord.Role):
     """Associate a special role with a Discord role.
 
     Args:
         special_role: Special role to assign Discord role to.
         discord_role: Discord role to assign to special role.
-
-    Returns:
-        ID of previously associated Discord role if there was one, else None.
     """
     database, cursor = db_utils.get_database_connection()
-    cursor.execute("SELECT discord_role_id FROM special_discord_roles WHERE role = %s", (special_role.value))
-    query_result = cursor.fetchone()
-
-    if query_result is None:
-        cursor.execute("INSERT INTO special_discord_roles VALUES (DEFAULT, %s, %s)", (special_role.value, discord_role.id))
-        former_id = None
-    else:
-        cursor.execute("UPDATE special_discord_roles SET discord_role_id = %s WHERE role = %s",
-                       (discord_role.id, special_role.value))
-        former_id = query_result["discord_role_id"]
-
+    cursor.execute("INSERT INTO special_discord_roles VALUES (DEFAULT, %s, %s) ON DUPLICATE KEY UPDATE discord_role_id = %s",
+                   (special_role.value, discord_role.id, discord_role.id))
     database.commit()
     database.close()
-    return former_id
+
+
+def set_special_channel(special_channel: SpecialChannel, discord_channel: discord.TextChannel):
+    """Save channels for automated strikes and reminders.
+
+    Args:
+        special_channel: Special channel type.
+        discord_channel: Channel to send messages to.
+    """
+    database, cursor = db_utils.get_database_connection()
+    cursor.execute("INSERT INTO special_discord_channels VALUES (DEFAULT, %s, %s) ON DUPLICATE KEY UPDATE discord_channel_id = %s",
+                   (special_channel.value, discord_channel.id, discord_channel.id))
+    database.commit()
+    database.close()
 
 
 def set_primary_clan(tag: str,
@@ -165,6 +154,21 @@ def get_unset_special_roles() -> List[SpecialRole]:
     set_roles = {SpecialRole(role["role"]) for role in query_result}
     unset_roles = [role for role in SpecialRole if role not in set_roles]
     return unset_roles
+
+
+def get_unset_special_channels() -> List[SpecialChannel]:
+    """Get a list of any unset special channels.
+
+    Returns:
+        List of any special channels that still need to be set. Empty list indicates that everything is set.
+    """
+    database, cursor = db_utils.get_database_connection()
+    cursor.execute("SELECT channel FROM special_discord_channels")
+    query_result = cursor.fetchall()
+    database.close()
+    set_channels = {SpecialChannel(channel["channel"]) for channel in query_result}
+    unset_channels = [channel for channel in SpecialChannel if channel not in set_channels]
+    return unset_channels
 
 
 def is_primary_clan_set() -> bool:

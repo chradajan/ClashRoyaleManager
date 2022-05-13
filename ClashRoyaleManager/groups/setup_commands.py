@@ -5,7 +5,8 @@ from discord import app_commands
 
 import utils.clash_utils as clash_utils
 import utils.setup_utils as setup_utils
-from utils.custom_types import ClanRole, SpecialRole, StrikeCriteria
+from log.logger import LOG
+from utils.custom_types import ClanRole, SpecialChannel, SpecialRole, StrikeCriteria
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
 class SetupCommands(app_commands.Group, name="setup"):
@@ -23,16 +24,6 @@ class SetupCommands(app_commands.Group, name="setup"):
                               color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
 
-    @register_clan_role.error
-    async def register_clan_role_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        """register_clan_role error handler"""
-        if isinstance(error, app_commands.CheckFailure):
-            embed = discord.Embed(title="You do not have permission to use this command.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            embed = discord.Embed(title="An unexpected error has occurred.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed)
-            raise error
 
     @app_commands.command()
     @app_commands.checks.has_permissions(administrator=True)
@@ -59,20 +50,40 @@ class SetupCommands(app_commands.Group, name="setup"):
             embed = discord.Embed(title=f"Users with access to privileged commands should now receive the {discord_role} role.",
                                   color=discord.Color.green())
         else:
-            embed = discord.Embed(title="Received an improper status. No changes have been made.", color=discord.Color.red())
+            embed = discord.Embed(title="Received invalid status. No changes have been made.", color=discord.Color.red())
 
         await interaction.response.send_message(embed=embed)
 
-    @register_special_clan_role.error
-    async def register_special_clan_role_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        """register_special_clan_role error handler"""
-        if isinstance(error, app_commands.CheckFailure):
-            embed = discord.Embed(title="You do not have permission to use this command.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command()
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(channel_purpose="Whether this channel is for automated reminders or strikes")
+    @app_commands.describe(channel="Channel where automated reminders or strikes will be sent to")
+    async def register_special_channel(self,
+                                       interaction: discord.Interaction,
+                                       channel_purpose: SpecialChannel,
+                                       channel: discord.TextChannel):
+        """Determine where automated strikes and reminders are sent."""
+        if interaction.client.user not in channel.members:
+            embed = discord.Embed(title=f"ClashRoyaleManager needs to be a member of #{channel} in order to send messages.",
+                                  description="Either add ClashRoyaleManager to the channel or choose a different channel.",
+                                  color=discord.Color.red())
+        elif not channel.permissions_for(channel.guild.me).send_messages:
+            embed = discord.Embed(title=f"ClashRoyaleManager does not have permission to send messages in #{channel}",
+                                  description=("Either give ClashRoyaleManager permission to send messages there "
+                                               "or choose a different channel."),
+                                  color=discord.Color.red())
         else:
-            embed = discord.Embed(title="An unexpected error has occurred.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed)
-            raise error
+            setup_utils.set_special_channel(channel_purpose, channel)
+
+            if channel_purpose == SpecialChannel.Reminders:
+                embed = discord.Embed(title=f"Automated reminders will now be sent to #{channel}", color=discord.Color.green())
+            elif channel_purpose == SpecialChannel.Strikes:
+                embed = discord.Embed(title=f"Automated strikes will now be sent to #{channel}", color=discord.Color.green())
+            else:
+                embed = discord.Embed(title="Received invalid channel type. No changes have been made.", color=discord.Color.red())
+
+        await interaction.response.send_message(embed=embed)
 
 
     @app_commands.command()
@@ -120,17 +131,6 @@ class SetupCommands(app_commands.Group, name="setup"):
 
         await interaction.response.send_message(embed=embed)
 
-    @register_primary_clan.error
-    async def register_primary_clan_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        """register_primary_clan error handler"""
-        if isinstance(error, app_commands.CheckFailure):
-            embed = discord.Embed(title="You do not have permission to use this command.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            embed = discord.Embed(title="An unexpected error has occurred.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed)
-            raise error
-
 
     @app_commands.command()
     @app_commands.checks.has_permissions(administrator=True)
@@ -153,17 +153,6 @@ class SetupCommands(app_commands.Group, name="setup"):
 
         await interaction.response.send_message(embed=embed)
 
-    @unregister_primary_clan.error
-    async def unregister_primary_clan_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        """unregister_primary_clan error handler"""
-        if isinstance(error, app_commands.CheckFailure):
-            embed = discord.Embed(title="You do not have permission to use this command.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            embed = discord.Embed(title="An unexpected error has occurred.", color=discord.Color.red())
-            await interaction.response.send_message(embed=embed)
-            raise error
-
 
     @app_commands.command()
     @app_commands.checks.has_permissions(administrator=True)
@@ -171,6 +160,7 @@ class SetupCommands(app_commands.Group, name="setup"):
         """Once all roles and primary clans are set, use this command to complete the setup process."""
         unset_clan_roles = setup_utils.get_unset_clan_roles()
         unset_special_roles = setup_utils.get_unset_special_roles()
+        unset_special_channels = setup_utils.get_unset_special_channels()
         is_primary_clan_set = setup_utils.is_primary_clan_set()
 
         if unset_clan_roles:
@@ -180,6 +170,10 @@ class SetupCommands(app_commands.Group, name="setup"):
         elif unset_special_roles:
             embed = discord.Embed(title="Cannot complete setup yet. The following special roles do not have Discord roles:",
                                   description="```" + ", ".join(role.name for role in unset_special_roles) + "```",
+                                  color=discord.Color.red())
+        elif unset_special_channels:
+            embed = discord.Embed(title="Cannot complete setup yet. The following special channels are not set:",
+                                  description="```" + ", ".join(channel.name for channel in unset_special_channels) + "```",
                                   color=discord.Color.red())
         elif not is_primary_clan_set:
             embed = discord.Embed(title="Cannot complete setup yet. There must be at least one primary clan.",
@@ -195,9 +189,19 @@ class SetupCommands(app_commands.Group, name="setup"):
 
         await interaction.response.send_message(embed=embed)
 
+
+    @register_clan_role.error
     @complete_setup.error
-    async def complete_setup_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        """complete_setup error handler"""
+    @register_special_clan_role.error
+    @register_special_channel.error
+    @register_primary_clan.error
+    @unregister_primary_clan.error
+    async def setup_commands_error_hander(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """Error handler for setup commands."""
         if isinstance(error, app_commands.CheckFailure):
             embed = discord.Embed(title="You do not have permission to use this command.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            embed = discord.Embed(title="An unexpected error has occurred.", color=discord.Color.red())
+            await interaction.response.send_message(embed=embed)
+            LOG.exception(error)
