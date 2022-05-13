@@ -235,10 +235,10 @@ DROP TABLE IF EXISTS `special_discord_channels`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `special_discord_channels` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `channel` enum('strikes','reminders') NOT NULL,
+  `channel` enum('strikes','reminders','admin_only') NOT NULL,
   `discord_channel_id` bigint unsigned NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `role` (`role`)
+  UNIQUE KEY `channel` (`channel`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -251,7 +251,7 @@ DROP TABLE IF EXISTS `special_discord_roles`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `special_discord_roles` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `role` enum('visitor','new','rules','admin') NOT NULL,
+  `role` enum('visitor','new','admin') NOT NULL,
   `discord_role_id` bigint unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `role` (`role`)
@@ -272,7 +272,6 @@ CREATE TABLE `users` (
   `tag` varchar(16) NOT NULL,
   `name` varchar(50) NOT NULL,
   `strikes` int NOT NULL DEFAULT '0',
-  `permanent_strikes` int NOT NULL DEFAULT '0',
   `reminder_time` enum('US','EU') NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `tag` (`tag`),
@@ -307,4 +306,4 @@ INSERT INTO `variables` VALUES (DEFAULT, DEFAULT, DEFAULT);
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2022-05-13  7:06:33
+-- Dump completed on 2022-05-13 22:22:59

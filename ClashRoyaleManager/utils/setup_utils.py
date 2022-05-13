@@ -80,7 +80,13 @@ def set_primary_clan(tag: str,
         GeneralAPIError: Clan does not already exist in clans table and an error was encountered getting its name from the API.
         ResourceNotFound: Clan does not already exist in clans table and is an invalid clan tag.
     """
-    clan_id = db_utils.insert_clan(tag=tag, discord_role_id=role.id)
+    name = clash_utils.get_clan_name(tag)
+    database, cursor = db_utils.get_database_connection()
+    cursor.execute("INSERT INTO clans (tag, name, discord_role_id) VALUES (%s, %s, %s)\
+                    ON DUPLICATE KEY UPDATE name = %s, discord_role_id = %s",
+                   (tag, name, role.id, name, role.id))
+    cursor.execute("SELECT id FROM clans WHERE tag = %s", (tag))
+    clan_id = cursor.fetchone()["id"]
     args_dict = {
         "clan_id": clan_id,
         "track_stats": track_stats,
@@ -89,7 +95,6 @@ def set_primary_clan(tag: str,
         "strike_type": strike_type.value,
         "strike_threshold": strike_threshold
     }
-    database, cursor = db_utils.get_database_connection()
     cursor.execute("INSERT INTO primary_clans VALUES\
                     (%(clan_id)s, %(track_stats)s, %(send_reminders)s, %(assign_strikes)s, %(strike_type)s, %(strike_threshold)s)\
                     ON DUPLICATE KEY UPDATE track_stats = %(track_stats)s, send_reminders = %(send_reminders)s,\

@@ -1,6 +1,6 @@
 """Role manager. Gets saved clan and special roles and makes them accessible through ROLE object."""
 
-from typing import Dict, Union
+from typing import Dict, Set, Union
 
 import discord
 
@@ -57,6 +57,21 @@ class RoleManager:
         """
         role_id = db_utils.get_clan_affiliated_role_id(tag)
         return self.guild.get_role(role_id)
+
+
+    def get_all_roles(self) -> Set[discord.Role]:
+        """Get all clan roles, special roles, and primary clan roles. Does not include Admin role.
+
+        Returns:
+            Set of relevant roles.
+        """
+        role_set = {role for role in self.roles.values()}
+        primary_clans = db_utils.get_primary_clans()
+
+        for clan in primary_clans:
+            role_set.add(self.guild.get_role(clan["discord_role_id"]))
+
+        return role_set
 
 
 ROLE = RoleManager()

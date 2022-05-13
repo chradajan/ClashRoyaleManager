@@ -59,34 +59,20 @@ def get_guild_id() -> int:
     return query_result["guild_id"]
 
 
-def insert_clan(tag: str, name: Optional[str]=None, discord_role_id: Optional[int]=None) -> int:
-    """Insert a new clan into the clans table.
-
-    If the clan already exists, 
+def insert_clan(tag: str, name: str) -> int:
+    """Insert a new clan into the clans table. Update its name if it already exists.
 
     Args:
         tag: Tag of clan to insert.
-        name: Name of clan to insert. If not provided, get the name from the API.
-        discord_role_id: Discord role to assign to members of this clan. Defaults to Visitor role.
+        name: Name of clan to insert.
 
     Returns:
         ID of clan being inserted.
-
-    Raises:
-        GeneralAPIError: Clan does not already exist in clans table and an error was encountered getting its name from the API.
-        ResourceNotFound: Clan does not already exist in clans table and is an invalid clan tag.
     """
     database, cursor = get_database_connection()
-
-    if name is None:
-        name = clash_utils.get_clan_name(tag)
-
-    if discord_role_id is None:
-        discord_role_id = get_special_role_id(SpecialRole.Visitor)
-
     cursor.execute("INSERT INTO clans (tag, name, discord_role_id) VALUES (%s, %s, %s)\
-                    ON DUPLICATE KEY UPDATE name = %s, discord_role_id = %s",
-                   (tag, name, discord_role_id, name, discord_role_id))
+                    ON DUPLICATE KEY UPDATE name = %s",
+                   (tag, name, get_special_role_id(SpecialRole.Visitor), name))
     cursor.execute("SELECT id FROM clans WHERE tag = %s", (tag))
     id = cursor.fetchone()["id"]
     database.commit()
@@ -142,17 +128,11 @@ def insert_new_user(clash_data: ClashData, member: discord.Member=None) -> bool:
         clash_data["role_name"] = clash_data["role"].value
 
         cursor.execute("UPDATE clan_affiliations SET role = NULL WHERE user_id = %(user_id)s", clash_data)
+        cursor.execute("INSERT INTO clan_affiliations (user_id, clan_id, role) VALUES (%(user_id)s, %(clan_id)s, %(role_name)s)\
+                        ON DUPLICATE KEY UPDATE role = %(role_name)s",
+                       clash_data)
         cursor.execute("SELECT id FROM clan_affiliations WHERE user_id = %(user_id)s AND clan_id = %(clan_id)s", clash_data)
-        query_result = cursor.fetchone()
-
-        if query_result is None:
-            cursor.execute("INSERT INTO clan_affiliations VALUES (DEFAULT, %(user_id)s, %(clan_id)s, %(role_name)s, DEFAULT)",
-                           clash_data)
-            cursor.execute("SELECT id FROM clan_affiliations WHERE user_id = %(user_id)s AND clan_id = %(clan_id)s", clash_data)
-            clash_data["clan_affiliation_id"] = cursor.fetchone()["id"]
-        else:
-            clash_data["clan_affiliation_id"] = query_result["id"]
-            cursor.execute("UPDATE clan_affiliations SET role = %(role_name)s WHERE id = %(clan_affiliation_id)s", clash_data)
+        clash_data["clan_affiliation_id"] = cursor.fetchone()["id"]
 
         # Create River Race entry if user is in a clan that tracks stats
         cursor.execute("SELECT track_stats FROM primary_clans WHERE clan_id = %(clan_id)s", clash_data)
@@ -172,6 +152,18 @@ def insert_new_user(clash_data: ClashData, member: discord.Member=None) -> bool:
     database.commit()
     database.close()
     return True
+
+
+def dissociate_discord_info_from_user(member: discord.Member):
+    """Clear discord_id and discord_name from a user when they leave the server.
+
+    Args:
+        member: Discord member that just left the server.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("UPDATE users SET discord_id = NULL, discord_name = NULL WHERE discord_id = %s", (member.id))
+    database.commit()
+    database.close()
 
 
 def get_clans_in_database() -> Dict[str, str]:
@@ -333,3 +325,30 @@ def get_primary_clans() -> List[PrimaryClan]:
         primary_clans.append(clan_data)
     
     return primary_clans
+
+
+def get_clan_affiliation(member: discord.Member) -> Union[Tuple[str, bool, ClanRole], None]:
+    """Get a user's clan affiliation.
+
+    Args:
+        member: Discord user to get clan affiliation for.
+
+    Returns:
+        Tuple of user's clan tag, whether they're in a primary clan, and role in that clan, or None if they are not in a clan.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT clans.tag AS tag, clans.id AS clan_id, clan_affiliations.role AS role FROM users\
+                    INNER JOIN clan_affiliations ON users.id = clan_affiliations.user_id\
+                    INNER JOIN clans ON clans.id = clan_affiliations.clan_id\
+                    WHERE users.discord_id = %s AND clan_affiliations.role IS NOT NULL",
+                   (member.id))
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        database.close()
+        return None
+
+    cursor.execute("SELECT clan_id FROM primary_clans WHERE clan_id = %s", (query_result["clan_id"]))
+    database.close()
+
+    return (query_result["tag"], cursor.fetchone() is not None, ClanRole(query_result["role"]))
