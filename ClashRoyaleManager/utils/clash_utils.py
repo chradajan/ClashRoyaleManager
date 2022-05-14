@@ -3,8 +3,9 @@
 import datetime
 import re
 import requests
-from typing import Union
+from typing import Dict, Union
 
+import utils.db_utils as db_utils
 from config.credentials import CLASH_API_KEY
 from log.logger import LOG, log_message
 from utils.custom_types import ClanRole, ClashData, RiverRaceInfo
@@ -133,6 +134,7 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
         clash_data["cards"][card_level] += 1
         clash_data["found_cards"] += 1
 
+    LOG.info(log_message("User data: ", clash_data=clash_data))
     return clash_data
 
 
@@ -215,3 +217,71 @@ def get_current_river_race_info(tag: str) -> RiverRaceInfo:
         "clans": [(clan["tag"], clan["name"]) for clan in race_info["clans"]]
     }
     return river_race_info
+
+
+def get_active_members_in_clan(tag: str, force: bool=False) -> Dict[str, ClashData]:
+    """Get a dictionary of active members in a clan.
+
+    Args:
+        tag: Tag of clan to get members of.
+        force: If true, ignore any cached data and get latest data from API.
+
+    Returns:
+        Dictionary of active members in the specified clan. best_trophies, cards, found_cards, total_cards, and clan_name fields are
+        all populated but do not contain actual data.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    if not hasattr(get_active_members_in_clan, "cached_data"):
+        get_active_members_in_clan.cached_data = {}
+        get_active_members_in_clan.last_checks = {}
+        primary_clans = db_utils.get_primary_clans()
+
+        for clan in primary_clans:
+            get_active_members_in_clan.cached_data[clan["tag"]] = None
+            get_active_members_in_clan.last_checks[clan["tag"]] = None
+
+    now = datetime.datetime.utcnow()
+
+    if (get_active_members_in_clan.last_checks.get(tag) is None 
+            or (now - get_active_members_in_clan.last_checks[tag]).seconds > 60
+            or force):
+        LOG.info(f"Getting active members of clan {tag}")
+        req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}/members",
+                            headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+        if req.status_code != 200:
+            LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+            if req.status_code == 404:
+                raise ResourceNotFound
+            else:
+                raise GeneralAPIError
+
+        json_obj = req.json()
+        active_members = {}
+
+        for member in json_obj["items"]:
+            active_members[member["tag"]] = {
+                "tag": member["tag"],
+                "name": member["name"],
+                "role": ClanRole(member["role"].lower()),
+                "exp_level": member["expLevel"],
+                "trophies": member["trophies"],
+                "best_trophies": -1,
+                "cards": {},
+                "found_cards": -1,
+                "total_cards": -1,
+                "clan_name": "",
+                "clan_tag": tag
+            }
+
+        if tag in get_active_members_in_clan.cached_data:
+            get_active_members_in_clan.cached_data[tag] = active_members
+            get_active_members_in_clan.last_checks[tag] = now
+
+        return active_members
+
+    LOG.info(f"Getting cached active members of clan {tag}")
+    return get_active_members_in_clan.cached_data[tag]

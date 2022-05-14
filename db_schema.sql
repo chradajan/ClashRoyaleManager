@@ -273,6 +273,7 @@ CREATE TABLE `users` (
   `name` varchar(50) NOT NULL,
   `strikes` int NOT NULL DEFAULT '0',
   `reminder_time` enum('US','EU') NOT NULL,
+  `needs_update` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `tag` (`tag`),
   UNIQUE KEY `discord_id` (`discord_id`)

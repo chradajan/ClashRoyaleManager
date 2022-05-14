@@ -1,5 +1,6 @@
 """Functions that interface with the database."""
 
+from optparse import Option
 from typing import Dict, List, Optional, Tuple, Union
 
 import discord
@@ -13,6 +14,7 @@ from config.credentials import (
     PASSWORD,
     DATABASE_NAME
 )
+from log.logger import LOG
 from utils.custom_types import (
     ClanRole,
     ClashData,
@@ -21,7 +23,7 @@ from utils.custom_types import (
     SpecialRole,
     StrikeCriteria,
 )
-
+from utils.exceptions import GeneralAPIError
 
 def get_database_connection() -> Tuple[pymysql.Connection, pymysql.cursors.DictCursor]:
     """Establish connection to database.
@@ -80,7 +82,52 @@ def insert_clan(tag: str, name: str) -> int:
     return id
 
 
-def insert_new_user(clash_data: ClashData, member: discord.Member=None) -> bool:
+def update_clan_affiliation(clash_data: ClashData):
+    """Nullify role of any existing clan affiliations for the given user. Update/create a clan affiliation for their current clan.
+
+    Args:
+        clash_data: Data of user to update clan_affiliations for.
+
+    Precondition:
+        clash_data must contain a key called 'user_id' corresponding to their key in the users table.
+    """
+    database, cursor = get_database_connection()
+    # Nullify any existing affiliations.
+    cursor.execute("UPDATE clan_affiliations SET role = NULL WHERE user_id = %(user_id)s", clash_data)
+
+    if clash_data["clan_tag"] is not None:
+        # Create/update clan affiliation for user if they are in a clan.
+        clash_data["clan_id"] = insert_clan(clash_data["clan_tag"], clash_data["clan_name"])
+        clash_data["role_name"] = clash_data["role"].value
+        cursor.execute("INSERT INTO clan_affiliations (user_id, clan_id, role) VALUES (%(user_id)s, %(clan_id)s, %(role_name)s)\
+                        ON DUPLICATE KEY UPDATE role = %(role_name)s",
+                       clash_data)
+
+        # Check if user is in a primary clan that also tracks stats.
+        cursor.execute("SELECT track_stats FROM primary_clans WHERE clan_id = %(clan_id)s", clash_data)
+        query_result = cursor.fetchone()
+
+        if query_result is not None and query_result["track_stats"]:
+            # Create River Race user data entry for user if necessary.
+            cursor.execute("SELECT id FROM clan_affiliations WHERE user_id = %(user_id)s AND clan_id = %(clan_id)s", clash_data)
+            clash_data["clan_affiliation_id"] = cursor.fetchone()["id"]
+
+            cursor.execute("SELECT id FROM river_races WHERE clan_id = %(clan_id)s AND season_id = (SELECT MAX(id) FROM seasons)",
+                           clash_data)
+            query_result = cursor.fetchone()
+
+            if query_result is not None:
+                clash_data["river_race_id"] = query_result["id"]
+                cursor.execute("INSERT INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check) VALUES\
+                                (%(clan_affiliation_id)s, %(river_race_id)s, (SELECT last_check FROM variables))\
+                                ON DUPLICATE KEY UPDATE clan_affiliation_id = clan_affiliation_id",
+                                clash_data)
+
+    database.commit()
+    database.close()
+
+
+def insert_new_user(clash_data: ClashData, member: Optional[discord.Member]=None) -> bool:
     """
     Insert a new user into the database.
 
@@ -104,7 +151,6 @@ def insert_new_user(clash_data: ClashData, member: discord.Member=None) -> bool:
     cursor.execute("SELECT id, discord_id FROM users WHERE tag = %(tag)s", clash_data)
     query_result = cursor.fetchone()
 
-    # Insert/update member
     if query_result is None:
         cursor.execute("INSERT INTO users (discord_id, discord_name, tag, name)\
                         VALUES (%(discord_id)s, %(discord_name)s, %(tag)s, %(name)s)",
@@ -122,36 +168,38 @@ def insert_new_user(clash_data: ClashData, member: discord.Member=None) -> bool:
             database.close()
             return False
 
-    # Create/update clan affiliation if user is in a clan
-    if clash_data["clan_tag"] is not None:
-        clash_data["clan_id"] = insert_clan(clash_data["clan_tag"], clash_data["clan_name"])
-        clash_data["role_name"] = clash_data["role"].value
+    database.commit()
+    database.close()
+    update_clan_affiliation(clash_data)
+    return True
 
-        cursor.execute("UPDATE clan_affiliations SET role = NULL WHERE user_id = %(user_id)s", clash_data)
-        cursor.execute("INSERT INTO clan_affiliations (user_id, clan_id, role) VALUES (%(user_id)s, %(clan_id)s, %(role_name)s)\
-                        ON DUPLICATE KEY UPDATE role = %(role_name)s",
-                       clash_data)
-        cursor.execute("SELECT id FROM clan_affiliations WHERE user_id = %(user_id)s AND clan_id = %(clan_id)s", clash_data)
-        clash_data["clan_affiliation_id"] = cursor.fetchone()["id"]
 
-        # Create River Race entry if user is in a clan that tracks stats
-        cursor.execute("SELECT track_stats FROM primary_clans WHERE clan_id = %(clan_id)s", clash_data)
-        query_result = cursor.fetchone()
+def update_user(tag: str):
+    """Get a user's most up to date information and update their name and clan affiliation.
 
-        if query_result is not None and query_result["track_stats"]:
-            cursor.execute("SELECT id FROM river_races WHERE clan_id = %(clan_id)s AND season_id = (SELECT MAX(id) FROM seasons)",
-                           clash_data)
-            query_result = cursor.fetchone()
+    Args:
+        tag: Tag of user to update.
 
-            if query_result is not None:
-                clash_data["river_race_id"] = query_result["id"]
-                cursor.execute("INSERT IGNORE INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check) VALUES\
-                                (%(clan_affiliation_id)s, %(river_race_id)s, (SELECT last_check FROM variables))",
-                               clash_data)
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+    """
+    LOG.info(f"Updating user with tag {tag}")
+    clash_data = clash_utils.get_clash_royale_user_data(tag)
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT id FROM users WHERE tag = %(tag)s", clash_data)
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        database.close()
+        return
+    else:
+        clash_data["user_id"] = query_result["id"]
+
+    cursor.execute("UPDATE users SET name = %(name)s, needs_update = TRUE WHERE id = %(user_id)s", clash_data)
 
     database.commit()
     database.close()
-    return True
+    update_clan_affiliation(clash_data)
 
 
 def dissociate_discord_info_from_user(member: discord.Member):
@@ -352,3 +400,74 @@ def get_clan_affiliation(member: discord.Member) -> Union[Tuple[str, bool, ClanR
     database.close()
 
     return (query_result["tag"], cursor.fetchone() is not None, ClanRole(query_result["role"]))
+
+
+def get_all_clan_affiliations() -> List[Tuple[str, str, str, ClanRole]]:
+    """Get the clan affiliation of all users in the database.
+
+    Returns:
+        List of tuples of player tag, player name, clan tag, and clan role. If user is not in clan, then None is returned for clan
+        tag and role.
+    """
+    database, cursor = get_database_connection()
+    clan_affiliations = []
+    cursor.execute("SELECT clans.tag AS clan_tag, users.tag AS player_tag, users.name AS name, clan_affiliations.role AS role\
+                    FROM users INNER JOIN clan_affiliations ON users.id = clan_affiliations.user_id\
+                    INNER JOIN clans ON clans.id = clan_affiliations.clan_id\
+                    WHERE clan_affiliations.role IS NOT NULL")
+    query_result = cursor.fetchall()
+
+    for user in query_result:
+        clan_affiliations.append((user["player_tag"], user["name"], user["clan_tag"], ClanRole(user["role"])))
+
+    cursor.execute("SELECT tag, name FROM users WHERE id NOT IN (SELECT user_id FROM clan_affiliations)")
+    query_result = cursor.fetchall()
+
+    for user in query_result:
+        clan_affiliations.append((user["tag"], user["name"], None, None))
+
+    database.close()
+    return clan_affiliations
+
+
+def clean_up_database():
+    """Update the database to reflect changes to members in the primary clans.
+
+    Updates any user that is either
+        a. In a primary clan but is not affiliated with that clan
+        b. In a primary clan but is not affiliated with the correct role
+        c. In a primary clan but has changed their in-game username
+        d. Not in a primary clan but is currently affiliated with one
+
+    Raises:
+        GeneralAPIError: Something went wrong when getting active members of one of the primary clans.
+    """
+    LOG.info("Starting database clean up")
+    primary_clans = get_primary_clans()
+    clan_affiliations = get_all_clan_affiliations()
+    all_primary_active_members = {}
+    primary_clan_tags = set()
+
+    for clan in primary_clans:
+        primary_clan_tags.add(clan["tag"])
+        clan["active_members"] = clash_utils.get_active_members_in_clan(clan["tag"])
+        all_primary_active_members.update(clan["active_members"])
+
+    for player_tag, player_name, clan_tag, clan_role in clan_affiliations:
+        if player_tag in all_primary_active_members:
+            if (clan_tag != all_primary_active_members[player_tag]["clan_tag"]
+                    or clan_role != all_primary_active_members[player_tag]["role"]
+                    or player_name != all_primary_active_members[player_tag]["name"]):
+                try:
+                    LOG.info("Updating user in a primary clan")
+                    update_user(player_tag)
+                except GeneralAPIError:
+                    continue
+        elif clan_tag in primary_clan_tags:
+            try:
+                LOG.info("Updating user formerly in a primary clan")
+                update_user(player_tag)
+            except GeneralAPIError:
+                continue
+
+    LOG.info("Database clean up complete")

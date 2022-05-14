@@ -204,9 +204,9 @@ def finish_setup():
     for clan in primary_clans:
         try:
             river_race_info = clash_utils.get_current_river_race_info(clan["tag"])
-        except Exception as e:
+        except:
             database.close()
-            raise e
+            raise
 
         river_race_info["clan_id"] = clan["id"]
         river_race_info["season_id"] = season_id

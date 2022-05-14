@@ -66,6 +66,7 @@ class RoleManager:
             Set of relevant roles.
         """
         role_set = {role for role in self.roles.values()}
+        role_set.remove(self.roles[SpecialRole.Admin])
         primary_clans = db_utils.get_primary_clans()
 
         for clan in primary_clans:
