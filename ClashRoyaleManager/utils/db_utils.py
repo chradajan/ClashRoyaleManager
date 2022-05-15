@@ -1,7 +1,7 @@
 """Functions that interface with the database."""
 
 from optparse import Option
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import discord
 import pymysql
@@ -236,39 +236,40 @@ def get_user_in_database(search_key: Union[int, str]) -> List[Tuple[str, str, st
     multiple users. If this occurs, all users that were found are returned.
 
     Args:
-        Key to search for in database. Can be discord id, player tag, or player name.
+        search_key: Key to search for in database. Can be discord id, player tag, or player name.
 
     Returns:
-        List of tuples of (name, tag, clan_name).
+        List of tuples of (player tag, player name, clan name).
     """
     database, cursor = get_database_connection()
+    search_results = []
 
     if isinstance(search_key, int):
-        cursor.execute("SELECT users.name AS player_name, users.tag AS player_tag, clans.name AS clan_name FROM users\
-                        INNER JOIN clan_affiliations ON users.id = clan_affiliations.user_id\
-                        INNER JOIN clans ON clan_affiliations.clan_id = clans.id\
-                        WHERE users.discord_id = %s",
-                       (search_key))
-        query_result = cursor.fetchall()
+        cursor.execute("SELECT id, tag, name FROM users WHERE discord_id = %s", (search_key))
+        users = cursor.fetchall()
     else:
-        cursor.execute("SELECT users.name AS player_name, users.tag AS player_tag, clans.name AS clan_name FROM users\
-                        INNER JOIN clan_affiliations ON users.id = clan_affiliations.user_id\
-                        INNER JOIN clans ON clan_affiliations.clan_id = clans.id\
-                        WHERE users.tag = %s",
-                       (search_key))
-        query_result = cursor.fetchall()
+        cursor.execute("SELECT id, tag, name FROM users WHERE tag = %s", (search_key))
+        users = cursor.fetchall()
 
-        if not query_result:
-            cursor.execute("SELECT users.name AS player_name, users.tag AS player_tag, clans.name AS clan_name FROM users\
-                            INNER JOIN clan_affiliations ON users.id = clan_affiliations.user_id\
-                            INNER JOIN clans ON clan_affiliations.clan_id = clans.id\
-                            WHERE users.name = %s",
-                           (search_key))
-            query_result = cursor.fetchall()
+        if not users:
+            cursor.execute("SELECT id, tag, name FROM users WHERE name = %s", (search_key))
+            users = cursor.fetchall()
+
+    for user in users:
+        cursor.execute("SELECT clans.name AS clan_name FROM clans\
+                        INNER JOIN clan_affiliations ON clans.id = clan_affiliations.clan_id\
+                        INNER JOIN users ON clan_affiliations.user_id = users.id\
+                        WHERE users.id = %s AND clan_affiliations.role IS NOT NULL",
+                       (user["id"]))
+        query_result = cursor.fetchone()
+
+        if query_result is None:
+            search_results.append((user["tag"], user["name"], None))
+        else:
+            search_results.append((user["tag"], user["name"], query_result["clan_name"]))
 
     database.close()
-    results = [(user["player_name"], user["player_tag"], user["clan_name"]) for user in query_result]
-    return results
+    return search_results
 
 
 def get_clan_role_id(clan_role: ClanRole) -> Union[int, None]:
@@ -375,6 +376,55 @@ def get_primary_clans() -> List[PrimaryClan]:
     return primary_clans
 
 
+def get_all_discord_users() -> Dict[int, str]:
+    """Get dictionary of all Discord IDs and usernames in the database.
+
+    Returns:
+        Dictionary mapping Discord ID to username.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_id, discord_name FROM users WHERE discord_id IS NOT NULL")
+    query_result = cursor.fetchall()
+    database.close()
+    return {user["discord_id"]: user["discord_name"] for user in query_result}
+
+
+def get_all_updated_discord_users() -> Set[int]:
+    """Get set of all Discord users that need to be updated.
+
+    Returns:
+        Set of Discord IDs of users that should be updated.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_id FROM users WHERE discord_id IS NOT NULL AND needs_update = TRUE")
+    query_result = cursor.fetchall()
+    database.close()
+    return {user["discord_id"] for user in query_result}
+
+
+def clear_update_flag(discord_id: int) -> Union[str, None]:
+    """Clear the needs_update flag of the specified user and get their current in-game username.
+
+    Args:
+        discord_id: Discord ID of user to clear update flag for.
+
+    Returns:
+        Current in-game username of specified user, or None if user is not in database.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("UPDATE users SET needs_update = FALSE WHERE discord_id = %s", (discord_id))
+    cursor.execute("SELECT name FROM users WHERE discord_id = %s", (discord_id))
+    query_result = cursor.fetchone()
+    database.commit()
+    database.close()
+
+    if query_result is None:
+        LOG.debug("User was not found in database, unable to clear needs_update flag")
+        return None
+
+    return query_result["name"]
+
+
 def get_clan_affiliation(member: discord.Member) -> Union[Tuple[str, bool, ClanRole], None]:
     """Get a user's clan affiliation.
 
@@ -434,10 +484,10 @@ def clean_up_database():
     """Update the database to reflect changes to members in the primary clans.
 
     Updates any user that is either
-        a. In a primary clan but is not affiliated with that clan
-        b. In a primary clan but is not affiliated with the correct role
-        c. In a primary clan but has changed their in-game username
-        d. Not in a primary clan but is currently affiliated with one
+        a. in a primary clan but is not affiliated with that clan
+        b. in a primary clan but is not affiliated with the correct role
+        c. in a primary clan but has changed their in-game username
+        d. not in a primary clan but is currently affiliated with one
 
     Raises:
         GeneralAPIError: Something went wrong when getting active members of one of the primary clans.

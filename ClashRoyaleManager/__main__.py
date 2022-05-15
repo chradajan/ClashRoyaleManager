@@ -5,9 +5,10 @@ from discord.ext import commands
 
 import utils.db_utils as db_utils
 from cogs.listeners  import EventsManager
+from commands.context_menus import CONTEXT_MENUS
+from commands.update_commands import UPDATE_COMMANDS
+from commands.setup_commands import SETUP_COMMANDS
 from config.credentials import BOT_TOKEN
-from groups.member_commands import MEMBER_COMMANDS
-from groups.setup_commands import SETUP_COMMANDS
 from log.logger import LOG
 from utils.channel_manager import CHANNEL
 from utils.role_manager import ROLE
@@ -25,7 +26,7 @@ def main():
                        intents=intents)
 
     pre_initialization_groups = [*SETUP_COMMANDS]
-    post_initialization_groups = [*MEMBER_COMMANDS]
+    post_initialization_groups = [*UPDATE_COMMANDS, *CONTEXT_MENUS]
 
     if db_utils.is_initialized():
         for command in pre_initialization_groups:

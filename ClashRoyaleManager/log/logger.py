@@ -7,8 +7,6 @@ import os
 
 import discord
 
-import utils.discord_utils as discord_utils
-
 def log_message(msg: str="", **kwargs) -> str:
     """Format a message with arguments for the log.
 
@@ -23,7 +21,7 @@ def log_message(msg: str="", **kwargs) -> str:
 
     for key, value in kwargs.items():
         if all(hasattr(value, attr) for attr in ['discriminator', 'name', 'display_name']):
-            value = f"{value.display_name} - {discord_utils.full_name(value)}"
+            value = f"{value.display_name} - {value.name}#{value.discriminator}"
 
         args_str += f"{' ' * 4}{key}: {value}" + '\n'
 
