@@ -82,3 +82,54 @@ class RiverRaceInfo(TypedDict):
     completed_saturday: bool
     week: int
     clans: List[Tuple[str, str]] # (tag, name)
+
+
+class RiverRaceClan(TypedDict):
+    """Dictionary containing data about a clan's stats in a river race."""
+    tag: str
+    name: str
+    medals: int
+    total_decks_used: int
+    decks_used_today: int
+    completed: bool
+
+
+class Participant(TypedDict):
+    """Dictionary containing data about a participant in a river race."""
+    tag: str
+    name: str
+    medals: int
+    repair_points: int
+    boat_attacks: int
+    decks_used: int
+    decks_used_today: int
+
+
+class BattleStats(TypedDict):
+    """Dictionary containing a user's wins/losses on Battle Days."""
+    player_tag: str
+    clan_tag: str
+    regular_wins: int
+    regular_losses: int
+    special_wins: int
+    special_losses: int
+    duel_wins: int
+    duel_losses: int
+    series_wins: int
+    series_losses: int
+    boat_wins: int
+    boat_losses: int
+
+
+class DatabaseRiverRaceClan(TypedDict):
+    """Dictionary containing fields in river_race_clans table."""
+    id: int
+    clan_id: int
+    season_id: int
+    tag: str
+    name: str
+    current_race_medals: int
+    total_season_medals: int
+    current_race_total_decks: int
+    total_season_battle_decks: int
+    battle_days: int

@@ -197,27 +197,10 @@ def finish_setup():
     """
     database, cursor = db_utils.get_database_connection()
     cursor.execute("INSERT INTO seasons VALUES (DEFAULT, DEFAULT)")
-    cursor.execute("SELECT MAX(id) AS id FROM seasons")
-    season_id = cursor.fetchone()["id"]
-    primary_clans = db_utils.get_primary_clans()
+    database.commit()
 
-    for clan in primary_clans:
-        try:
-            river_race_info = clash_utils.get_current_river_race_info(clan["tag"])
-        except:
-            database.close()
-            raise
-
-        river_race_info["clan_id"] = clan["id"]
-        river_race_info["season_id"] = season_id
-        cursor.execute("INSERT INTO river_races (clan_id, season_id, start_time, colosseum_week, completed_saturday, week)\
-                        VALUES (%(clan_id)s, %(season_id)s, %(start_time)s, %(colosseum_week)s, %(completed_saturday)s, %(week)s)",
-                       river_race_info)
-
-        for tag, name in river_race_info["clans"]:
-            cursor.execute("INSERT INTO river_race_clans (season_id, tag, name) VALUES (%s, %s, %s)", (season_id, tag, name))
-            cursor.execute("INSERT INTO clans_in_race VALUES\
-                            ((SELECT MAX(id) FROM river_races), (SELECT MAX(id) FROM river_race_clans))")
+    for clan in db_utils.get_primary_clans():
+        db_utils.prepare_for_river_race(clan["tag"], True)
 
     cursor.execute("UPDATE variables SET initialized = TRUE")
     database.commit()

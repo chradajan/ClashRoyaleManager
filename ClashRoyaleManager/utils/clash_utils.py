@@ -3,12 +3,19 @@
 import datetime
 import re
 import requests
-from typing import Dict, Union
+from typing import Dict, List, Union
 
 import utils.db_utils as db_utils
 from config.credentials import CLASH_API_KEY
 from log.logger import LOG, log_message
-from utils.custom_types import ClanRole, ClashData, RiverRaceInfo
+from utils.custom_types import (
+    BattleStats,
+    ClanRole,
+    ClashData,
+    Participant,
+    RiverRaceClan,
+    RiverRaceInfo
+)
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
 def process_clash_royale_tag(input: str) -> Union[str, None]:
@@ -55,6 +62,19 @@ def battletime_to_datetime(battle_time: str) -> datetime.datetime:
     minute = int(battle_time[11:13])
     second = int(battle_time[13:15])
     return datetime.datetime(year, month, day, hour, minute, second, tzinfo=datetime.timezone.utc)
+
+
+def is_first_day_of_season() -> bool:
+    """Check if it's the first Monday of the current month, indicating that today is the start of a new season.
+
+    Precondition:
+        Should only be called on a Monday.
+
+    Returns:
+        Whether it's the beginning of a new season.
+    """
+    current_time = datetime.datetime.utcnow()
+    return current_time.month != (current_time - datetime.timedelta(days=7)).month
 
 
 def get_total_cards() -> int:
@@ -219,6 +239,73 @@ def get_current_river_race_info(tag: str) -> RiverRaceInfo:
     return river_race_info
 
 
+def get_clans_in_race(tag: str, post_race: bool) -> Dict[str, RiverRaceClan]:
+    """Get a dictionary of stats for each clan in a River Race.
+
+    Args:
+        tag: Get the clans in this clan's River Race.
+        post_race: Whether to get info of current River Race or most recent one.
+
+    Returns:
+        Dictionary mapping each clan's tag to its stats.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    LOG.info(log_message("Getting River Race clans info", tag=tag, post_race=post_race))
+
+    if post_race:
+        req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}/riverracelog?limit=1",
+                           headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+        if req.status_code != 200:
+            LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+            if req.status_code == 404:
+                raise ResourceNotFound
+            else:
+                raise GeneralAPIError
+
+        json_obj = req.json()
+        clans = [clan["clan"] for clan in json_obj["items"][0]["standings"]]
+    else:
+        req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}/currentriverrace",
+                           headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+        if req.status_code != 200:
+            LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+            if req.status_code == 404:
+                raise ResourceNotFound
+            else:
+                raise GeneralAPIError
+
+        json_obj = req.json()
+        clans = json_obj["clans"]
+
+    clans_dict = {}
+
+    for clan in clans:
+        medals = 0
+        decks_used_total = 0
+        decks_used_today = 0
+
+        for participant in clan["participants"]:
+            medals += participant["fame"]
+            decks_used_total += participant["decksUsed"]
+            decks_used_today += participant["decksUsedToday"]
+
+        clans_dict[clan["tag"]] = {
+            "tag": clan["tag"],
+            "name": clan["name"],
+            "medals": medals,
+            "total_decks_used": decks_used_total,
+            "decks_used_today": decks_used_today,
+            "completed": clan["fame"] >= 10000
+        }
+
+    return clans_dict
+
+
 def get_active_members_in_clan(tag: str, force: bool=False) -> Dict[str, ClashData]:
     """Get a dictionary of active members in a clan.
 
@@ -245,7 +332,7 @@ def get_active_members_in_clan(tag: str, force: bool=False) -> Dict[str, ClashDa
 
     now = datetime.datetime.utcnow()
 
-    if (get_active_members_in_clan.last_checks.get(tag) is None 
+    if (get_active_members_in_clan.last_checks.get(tag) is None
             or (now - get_active_members_in_clan.last_checks[tag]).seconds > 60
             or force):
         LOG.info(f"Getting active members of clan {tag}")
@@ -285,3 +372,273 @@ def get_active_members_in_clan(tag: str, force: bool=False) -> Dict[str, ClashDa
 
     LOG.info(f"Getting cached active members of clan {tag}")
     return get_active_members_in_clan.cached_data[tag]
+
+
+def get_river_race_participants(tag: str, force: bool=False) -> List[Participant]:
+    """Get a list of participants in a clan's current River Race.
+
+    Args:
+        tag: Clan to get participants of.
+        force: If true, ignore any cached data and get latest data from API.
+
+    Returns:
+        List of participants in the specified clan.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    if not hasattr(get_river_race_participants, "cached_data"):
+        get_river_race_participants.cached_data = {}
+        get_river_race_participants.last_checks = {}
+        primary_clans = db_utils.get_primary_clans()
+
+        for clan in primary_clans:
+            get_river_race_participants.cached_data[clan["tag"]] = None
+            get_river_race_participants.last_checks[clan["tag"]] = None
+
+    now = datetime.datetime.utcnow()
+
+    if (get_river_race_participants.last_checks.get(tag) is None
+            or (now - get_river_race_participants.last_checks[tag]).seconds > 60
+            or force):
+        LOG.info(f"Getting river race participants in clan {tag}")
+        req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}/currentriverrace",
+                        headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+        if req.status_code != 200:
+            LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+            if req.status_code == 404:
+                raise ResourceNotFound
+            else:
+                raise GeneralAPIError
+
+        json_obj = req.json()
+        participants = []
+
+        for participant in json_obj["clan"]["participants"]:
+            participant["tag"] = participant.pop("tag")
+            participant["name"] = participant.pop("name")
+            participant["medals"] = participant.pop("fame")
+            participant["repair_points"] = participant.pop("repairPoints")
+            participant["boat_attacks"] = participant.pop("boatAttacks")
+            participant["decks_used"] = participant.pop("decksUsed")
+            participant["decks_used_today"] = participant.pop("decksUsedToday")
+            participants.append(participant)
+
+        if tag in get_river_race_participants.cached_data:
+            get_river_race_participants.cached_data[tag] = participants
+            get_river_race_participants.last_checks[tag] = now
+
+        return participants
+
+    LOG.info(f"Getting cached River Race participants in clan {tag}")
+    return get_river_race_participants.cached_data[tag]
+
+
+def get_prior_river_race_participants(tag: str, force: bool=True) -> List[Participant]:
+    """Get participants in most recently completed River Race.
+
+    Args:
+        tag: Tag of clan to get participants of.
+        force: If true, ignore any cached data and get latest data from API.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    if not hasattr(get_prior_river_race_participants, "cached_data"):
+        get_prior_river_race_participants.cached_data = {}
+        get_prior_river_race_participants.last_checks = {}
+        primary_clans = db_utils.get_primary_clans()
+
+        for clan in primary_clans:
+            get_prior_river_race_participants.cached_data[clan["tag"]] = None
+            get_prior_river_race_participants.last_checks[clan["tag"]] = None
+
+    now = datetime.datetime.utcnow()
+
+    if (get_prior_river_race_participants.last_checks.get(tag) is None
+            or (now - get_prior_river_race_participants.last_checks[tag]).seconds > 60
+            or force):
+        LOG.info(f"Getting participants from most recent river race of clan {tag}")
+        req = requests.get(url=f"https://api.clashroyale.com/v1/clans/%23{tag[1:]}/riverracelog?limit=1",
+                        headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+        if req.status_code != 200:
+            LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+            if req.status_code == 404:
+                raise ResourceNotFound
+            else:
+                raise GeneralAPIError
+
+        json_obj = req.json()
+        participants = []
+        index = 0
+
+        for clan in json_obj["items"][0]["standings"]:
+            if clan["clan"]["tag"] == tag:
+                break
+
+            index += 1
+
+        for participant in json_obj["items"][0]["standings"][index]["clan"]["participants"]:
+            participant["tag"] = participant.pop("tag")
+            participant["name"] = participant.pop("name")
+            participant["medals"] = participant.pop("fame")
+            participant["repair_points"] = participant.pop("repairPoints")
+            participant["boat_attacks"] = participant.pop("boatAttacks")
+            participant["decks_used"] = participant.pop("decksUsed")
+            participant["decks_used_today"] = participant.pop("decksUsedToday")
+            participants.append(participant)
+
+        if tag in get_prior_river_race_participants.cached_data:
+            get_prior_river_race_participants.cached_data[tag] = participants
+            get_prior_river_race_participants.last_checks[tag] = now
+
+        return participants
+
+    LOG.info(f"Getting cached prior River Race participants of clan {tag}")
+    return get_prior_river_race_participants.cached_data[tag]
+
+
+def get_deck_usage_today(tag: str) -> Dict[str, int]:
+    """Get a dictionary of users in a clan and how many decks they've used today.
+
+    Args:
+        tag: Tag of clan to get deck usage in.
+
+    Returns:
+        Dictionary mapping player tags to deck usage today.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    LOG.info(f"Getting dictionary of users and how many decks they've used in clan {tag}")
+    participants = get_river_race_participants(tag, True)
+    active_members = get_active_members_in_clan(tag, True).copy()
+    deck_usage = {}
+
+    for participant in participants:
+        deck_usage[participant["tag"]] = participant["decks_used_today"]
+        active_members.pop(participant["tag"], None)
+
+    for tag in active_members:
+        deck_usage[tag] = 0
+
+    return deck_usage
+
+
+def get_battle_day_stats(player_tag: str,
+                         clan_tag: str,
+                         last_check: datetime.datetime,
+                         current_time: datetime.datetime) -> BattleStats:
+    """Get wins/losses of each River Race game mode for a user.
+
+    Args:
+        player_tag: Tag of user to get battlelog of.
+        clan_tag: Only consider matches played while in this clan.
+        last_check: Only consider matches played on or after this time.
+        current_time: Only consider matches played before this time.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    LOG.info(log_message("Getting battlog of user", player_tag=player_tag, clan_tag=clan_tag, last_check=last_check))
+    req = requests.get(url=f"https://api.clashroyale.com/v1/players/%23{player_tag[1:]}/battlelog",
+                       headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+    if req.status_code != 200:
+        LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+        if req.status_code == 404:
+            raise ResourceNotFound
+        else:
+            raise GeneralAPIError
+
+    battle_log = req.json()
+    battles_to_analyze = []
+    last_check = last_check.replace(tzinfo=datetime.timezone.utc)
+    current_time = current_time.replace(tzinfo=datetime.timezone.utc)
+
+    for battle in battle_log:
+        battle_time = battletime_to_datetime(battle["battleTime"])
+
+        if ((battle["type"].startswith("riverRace") or battle["type"] == "boatBattle")
+                and last_check <= battle_time < current_time
+                and battle["team"][0]["clan"]["tag"] == clan_tag):
+            battles_to_analyze.append(battle)
+
+    stats: BattleStats = {
+        "player_tag": player_tag,
+        "clan_tag": clan_tag,
+        "regular_wins": 0,
+        "regular_losses": 0,
+        "special_wins": 0,
+        "special_losses": 0,
+        "duel_wins": 0,
+        "duel_losses": 0,
+        "series_wins": 0,
+        "series_losses": 0,
+        "boat_wins": 0,
+        "boat_losses": 0
+    }
+
+    for battle in battles_to_analyze:
+        if battle["type"] == "riverRacePvP":
+            if battle["gameMode"]["name"] == "CW_Battle_1v1":
+                if battle["team"][0]["crowns"] > battle["opponent"][0]["crowns"]:
+                    stats["regular_wins"] += 1
+                else:
+                    stats["regular_losses"] += 1
+            else:
+                if battle["team"][0]["crowns"] > battle["opponent"][0]["crowns"]:
+                    stats["special_wins"] += 1
+                else:
+                    stats["special_losses"] += 1
+
+        elif battle["type"] == "boatBattle":
+            if battle["boatBattleSide"] == "defender":
+                continue
+
+            if battle["boatBattleWon"]:
+                stats["boat_wins"] += 1
+            else:
+                stats["boat_losses"] += 1
+
+        elif battle["type"].startswith("riverRaceDuel"):
+            # Determine duel series outcome by result of final game.
+            king_hit_points = battle["team"][0].get("kingTowerHitPoints")
+            princess_list = battle["team"][0].get("princessTowersHitPoints")
+            opponent_king_hit_points = battle["opponent"][0].get("kingTowerHitPoints")
+            opponent_princess_list = battle["opponent"][0].get("princessTowersHitPoints")
+
+            if king_hit_points is None:
+                duel_won = False
+            elif opponent_king_hit_points is None:
+                duel_won = True
+            elif (princess_list is None) and (opponent_princess_list is not None):
+                duel_won = False
+            elif (princess_list is not None) and (opponent_princess_list is None):
+                duel_won = True
+            elif len(princess_list) < len(opponent_princess_list):
+                duel_won = False
+            elif len(princess_list) > len(opponent_princess_list):
+                duel_won = True
+
+            # Determine how many individual matches were won/lost by number of cards used.
+            if duel_won:
+                stats["series_wins"] += 1
+                stats["duel_wins"] += 2
+
+                if len(battle["team"][0]["cards"]) == 24:
+                    stats["duel_losses"] += 1
+            else:
+                stats["series_losses"] += 1
+                stats["duel_losses"] += 2
+
+                if len(battle["team"][0]["cards"]) == 24:
+                    stats["duel_wins"] += 1
+
+    return stats

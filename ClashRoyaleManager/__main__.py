@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 
 import utils.db_utils as db_utils
+from cogs.automated_routines import AutomatedRoutines
 from cogs.listeners  import EventsManager
 from commands.context_menus import CONTEXT_MENUS
 from commands.update_commands import UPDATE_COMMANDS
@@ -48,6 +49,7 @@ def main():
         ROLE.initialize_roles(bot.get_guild(guild_id))
 
         if db_utils.is_initialized():
+            await bot.add_cog(AutomatedRoutines(bot))
             await bot.add_cog(EventsManager())
 
         LOG.info("Bot started")

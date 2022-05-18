@@ -70,23 +70,6 @@ CREATE TABLE `clans` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `clans_in_race`
---
-
-DROP TABLE IF EXISTS `clans_in_race`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `clans_in_race` (
-  `river_race_id` int NOT NULL,
-  `river_race_clan_id` int NOT NULL,
-  PRIMARY KEY (`river_race_id`,`river_race_clan_id`),
-  KEY `river_race_clan_id` (`river_race_clan_id`),
-  CONSTRAINT `clans_in_race_ibfk_1` FOREIGN KEY (`river_race_id`) REFERENCES `river_races` (`id`),
-  CONSTRAINT `clans_in_race_ibfk_2` FOREIGN KEY (`river_race_clan_id`) REFERENCES `river_race_clans` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
 -- Table structure for table `kicks`
 --
 
@@ -131,6 +114,7 @@ DROP TABLE IF EXISTS `river_race_clans`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `river_race_clans` (
   `id` int NOT NULL AUTO_INCREMENT,
+  `clan_id` int NOT NULL,
   `season_id` int NOT NULL,
   `tag` varchar(16) NOT NULL,
   `name` varchar(50) NOT NULL,
@@ -140,8 +124,8 @@ CREATE TABLE `river_race_clans` (
   `total_season_battle_decks` int NOT NULL DEFAULT '0',
   `battle_days` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
-  KEY `season_id` (`season_id`),
-  CONSTRAINT `river_race_clans_ibfk_1` FOREIGN KEY (`season_id`) REFERENCES `seasons` (`id`)
+  CONSTRAINT `river_race_clans_ibfk_1` FOREIGN KEY (`clan_id`) REFERENCES `clans` (`id`),
+  CONSTRAINT `river_race_clans_ibfk_2` FOREIGN KEY (`season_id`) REFERENCES `seasons` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -193,10 +177,11 @@ CREATE TABLE `river_races` (
   `id` int NOT NULL AUTO_INCREMENT,
   `clan_id` int NOT NULL,
   `season_id` int NOT NULL,
+  `week` int NOT NULL,
   `start_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_check` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `colosseum_week` tinyint(1) NOT NULL DEFAULT '0',
   `completed_saturday` tinyint(1) NOT NULL DEFAULT '0',
-  `week` int NOT NULL,
   `day_1` timestamp NULL DEFAULT NULL,
   `day_2` timestamp NULL DEFAULT NULL,
   `day_3` timestamp NULL DEFAULT NULL,
@@ -205,7 +190,7 @@ CREATE TABLE `river_races` (
   `day_6` timestamp NULL DEFAULT NULL,
   `day_7` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `clan_id` (`clan_id`,`season_id`),
+  UNIQUE KEY `clan_id` (`clan_id`,`season_id`,`week`),
   KEY `season_id` (`season_id`),
   CONSTRAINT `river_races_ibfk_1` FOREIGN KEY (`clan_id`) REFERENCES `clans` (`id`),
   CONSTRAINT `river_races_ibfk_2` FOREIGN KEY (`season_id`) REFERENCES `seasons` (`id`)
@@ -290,12 +275,11 @@ DROP TABLE IF EXISTS `variables`;
 CREATE TABLE `variables` (
   `initialized` tinyint(1) NOT NULL DEFAULT '0',
   `guild_id` bigint unsigned NOT NULL DEFAULT '0',
-  `last_check` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`initialized`,`guild_id`,`last_check`)
+  PRIMARY KEY (`initialized`,`guild_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
-INSERT INTO `variables` VALUES (DEFAULT, DEFAULT, DEFAULT);
+INSERT INTO `variables` VALUES (DEFAULT, DEFAULT);
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -307,4 +291,4 @@ INSERT INTO `variables` VALUES (DEFAULT, DEFAULT, DEFAULT);
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2022-05-13 22:22:59
+-- Dump completed on 2022-05-17  3:38:42
