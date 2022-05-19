@@ -4,6 +4,7 @@ import datetime
 from typing import Dict
 
 import aiocron
+import discord
 from discord.ext import commands
 
 import utils.clash_utils as clash_utils
@@ -16,7 +17,7 @@ from utils.exceptions import GeneralAPIError
 
 class AutomatedRoutines(commands.Cog):
     """Automated routines."""
-    BOT: commands.Bot = None
+    GUILD: discord.Guild = None
     PRIMARY_CLANS: Dict[str, PrimaryClan] = {}
 
     # Reset time check variables
@@ -24,9 +25,9 @@ class AutomatedRoutines(commands.Cog):
     LAST_CHECK_SUM: Dict[str, int] = {}
     LAST_DECK_USAGE: Dict[str, Dict[str, int]] = {}
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, guild: discord.Guild):
         """Save bot for access to the guild object."""
-        AutomatedRoutines.BOT = bot
+        AutomatedRoutines.GUILD = guild
 
         for clan in db_utils.get_primary_clans():
             AutomatedRoutines.PRIMARY_CLANS[clan["tag"]] = clan
@@ -192,4 +193,12 @@ class AutomatedRoutines(commands.Cog):
                     LOG.info(f"Sending reminder for {tag}")
                     await discord_utils.send_reminder(tag, ReminderTime.EU, True)
 
+            LOG.automation_end()
+
+
+        @aiocron.crontab('30 7,15,23 * * *')
+        async def update_all_members():
+            """Update all members of the Discord server."""
+            LOG.automation_start("Updating all Discord members")
+            await discord_utils.update_all_members(AutomatedRoutines.GUILD)
             LOG.automation_end()

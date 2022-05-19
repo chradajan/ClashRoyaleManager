@@ -50,7 +50,7 @@ def main():
         ROLE.initialize_roles(bot.get_guild(guild_id))
 
         if db_utils.is_initialized():
-            await bot.add_cog(AutomatedRoutines(bot))
+            await bot.add_cog(AutomatedRoutines(bot.get_guild(guild_id)))
             await bot.add_cog(EventsManager())
 
         LOG.info("Bot started")
