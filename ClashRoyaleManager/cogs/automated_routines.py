@@ -8,13 +8,16 @@ from discord.ext import commands
 
 import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
+import utils.discord_utils as discord_utils
 import utils.stat_utils as stat_utils
 from log.logger import LOG
+from utils.custom_types import PrimaryClan, ReminderTime
 from utils.exceptions import GeneralAPIError
 
 class AutomatedRoutines(commands.Cog):
     """Automated routines."""
     BOT: commands.Bot = None
+    PRIMARY_CLANS: Dict[str, PrimaryClan] = {}
 
     # Reset time check variables
     RESET_OCCURRED: Dict[str, bool] = {}
@@ -26,6 +29,7 @@ class AutomatedRoutines(commands.Cog):
         AutomatedRoutines.BOT = bot
 
         for clan in db_utils.get_primary_clans():
+            AutomatedRoutines.PRIMARY_CLANS[clan["tag"]] = clan
             AutomatedRoutines.RESET_OCCURRED[clan["tag"]] = False
             AutomatedRoutines.LAST_CHECK_SUM[clan["tag"]] = -1
             AutomatedRoutines.LAST_DECK_USAGE[clan["tag"]] = {}
@@ -65,7 +69,7 @@ class AutomatedRoutines(commands.Cog):
 
                     if weekday == 3:
                         db_utils.prepare_for_battle_days(tag)
-                    elif weekday in {4, 5, 6} and db_utils.tracks_stats(tag):
+                    elif weekday in {4, 5, 6} and AutomatedRoutines.PRIMARY_CLANS[tag]["track_stats"]:
                         stat_utils.update_clan_battle_day_stats(tag, False)
                         stat_utils.save_river_race_clans_info(tag, False)
 
@@ -108,13 +112,13 @@ class AutomatedRoutines(commands.Cog):
 
                 if weekday == 3:
                     db_utils.prepare_for_battle_days(tag)
-                elif weekday in {4, 5, 6} and db_utils.tracks_stats(tag):
+                elif weekday in {4, 5, 6} and AutomatedRoutines.PRIMARY_CLANS[tag]["track_stats"]:
                     stat_utils.update_clan_battle_day_stats(tag, False)
                     stat_utils.save_river_race_clans_info(tag, False)
 
                 db_utils.record_deck_usage_today(tag, weekday, deck_usage)
 
-            for tag in AutomatedRoutines.RESET_OCCURRED:
+            for tag in AutomatedRoutines.PRIMARY_CLANS:
                 AutomatedRoutines.RESET_OCCURRED[tag] = False
                 AutomatedRoutines.LAST_CHECK_SUM[tag] = -1
                 AutomatedRoutines.LAST_DECK_USAGE[tag] = {}
@@ -127,15 +131,15 @@ class AutomatedRoutines(commands.Cog):
             """Perform final stats checks after River Race and create new River Race entries."""
             LOG.automation_start("Starting end of race checks")
 
-            for tag in AutomatedRoutines.RESET_OCCURRED:
-                if db_utils.tracks_stats(tag):
+            for tag in AutomatedRoutines.PRIMARY_CLANS:
+                if AutomatedRoutines.PRIMARY_CLANS[tag]["track_stats"]:
                     stat_utils.update_clan_battle_day_stats(tag, True)
                     stat_utils.save_river_race_clans_info(tag, True)
 
             if clash_utils.is_first_day_of_season():
                 db_utils.create_new_season()
 
-            for tag in AutomatedRoutines.RESET_OCCURRED:
+            for tag in AutomatedRoutines.PRIMARY_CLANS:
                 db_utils.prepare_for_river_race(tag)
 
             LOG.automation_end()
@@ -146,8 +150,8 @@ class AutomatedRoutines(commands.Cog):
             """Check Battle Day stats hourly."""
             LOG.automation_start("Starting evening Battle Day stats check")
 
-            for tag in AutomatedRoutines.RESET_OCCURRED:
-                if db_utils.tracks_stats(tag):
+            for tag in AutomatedRoutines.PRIMARY_CLANS:
+                if AutomatedRoutines.PRIMARY_CLANS[tag]["track_stats"]:
                     stat_utils.update_clan_battle_day_stats(tag, False)
 
             LOG.automation_end()
@@ -158,8 +162,34 @@ class AutomatedRoutines(commands.Cog):
             """Check Battle Day stats hourly."""
             LOG.automation_start("Starting morning Battle Day stats check")
 
-            for tag in AutomatedRoutines.RESET_OCCURRED:
-                if db_utils.tracks_stats(tag):
+            for tag in AutomatedRoutines.PRIMARY_CLANS:
+                if AutomatedRoutines.PRIMARY_CLANS[tag]["track_stats"]:
                     stat_utils.update_clan_battle_day_stats(tag, False)
+
+            LOG.automation_end()
+
+
+        @aiocron.crontab('0 2 * * 5,6,0,1')
+        async def automated_reminder_us():
+            """Send a reminder for all clans with reminders enabled. Mention users with a US reminder time preference."""
+            LOG.automation_start("Sending US reminders")
+
+            for tag in AutomatedRoutines.PRIMARY_CLANS:
+                if AutomatedRoutines.PRIMARY_CLANS[tag]["send_reminders"]:
+                    LOG.info(f"Sending reminder for {tag}")
+                    await discord_utils.send_reminder(tag, ReminderTime.US, True)
+
+            LOG.automation_end()
+
+
+        @aiocron.crontab('0 19 * * 4,5,6,0')
+        async def automated_reminder_eu():
+            """Send a reminder for all clans with reminders enabled. Mention users with an EU reminder time preference."""
+            LOG.automation_start("Sending EU reminders")
+
+            for tag in AutomatedRoutines.PRIMARY_CLANS:
+                if AutomatedRoutines.PRIMARY_CLANS[tag]["send_reminders"]:
+                    LOG.info(f"Sending reminder for {tag}")
+                    await discord_utils.send_reminder(tag, ReminderTime.EU, True)
 
             LOG.automation_end()

@@ -133,3 +133,14 @@ class DatabaseRiverRaceClan(TypedDict):
     current_race_total_decks: int
     total_season_battle_decks: int
     battle_days: int
+
+
+class DecksReport(TypedDict):
+    """Dictionary containing a report of deck usage today."""
+    remaining_decks: int
+    participants: int
+    active_members_with_no_decks_used: int
+    active_members_with_remaining_decks: List[Tuple[str, str, int]]     # (tag, name, decks_remaining)
+    active_members_without_remaining_decks: List[Tuple[str, str, int]]  # (tag, name, decks_remaining)
+    inactive_members_with_decks_used: List[Tuple[str, str, int]]        # (tag, name, decks_remaining)
+    locked_out_active_members: List[Tuple[str, str, int]]               # (tag, name, decks_remaining)

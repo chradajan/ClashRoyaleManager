@@ -28,7 +28,8 @@ async def register(interaction: discord.Interaction, tag: str):
         embed = discord.Embed(title="You entered an invalid Supercell tag. Please try again.", color=discord.Color.red())
     elif processed_tag in (clans := db_utils.get_clans_in_database()):
         LOG.debug("User provided tag of clan in database")
-        embed = discord.Embed(title=f"You entered the clan tag of {clans[processed_tag]}. Please enter your own player tag.")
+        embed = discord.Embed(title=(f"You entered the clan tag of {discord.utils.escape_markdown(clans[processed_tag])}. "
+                                     "Please enter your own player tag."))
     elif db_utils.get_user_in_database(interaction.user.id):
         LOG.debug("Registered user tried to register again")
         embed = discord.Embed(title="You are already registered.", color=discord.Color.red())
@@ -47,8 +48,8 @@ async def register(interaction: discord.Interaction, tag: str):
 
                 LOG.info("User successfully registered")
                 embed = discord.Embed(title="Registration successful!",
-                                        description=f"You have been registered as {clash_data['name']}.",
-                                        color=discord.Color.green())
+                                      description=f"You have been registered as {clash_data['name']}.",
+                                      color=discord.Color.green())
             else:
                 LOG.debug("User entered tag of existing registered user")
                 embed = discord.Embed(title="The tag you entered is already associated with a user on this server.",
@@ -165,7 +166,7 @@ async def unregister_all_members(interaction: discord.Interaction):
 @update_all_members.error
 @unregister_member.error
 @unregister_all_members.error
-async def update_commands_error_hander(interaction: discord.Interaction, error: app_commands.AppCommandError):
+async def update_commands_error_handler(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """Error handler for update commands."""
     if isinstance(error, GeneralAPIError):
         embed = discord.Embed(title="The Clash Royale API is currently inaccessible.",

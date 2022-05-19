@@ -2,10 +2,12 @@
 
 import discord
 
+import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from log.logger import LOG, log_message
-from utils.custom_types import SpecialRole
+from utils.custom_types import ReminderTime, SpecialChannel, SpecialRole
 from utils.exceptions import GeneralAPIError
+from utils.channel_manager import CHANNEL
 from utils.role_manager import ROLE
 
 def full_discord_name(member: discord.Member) -> str:
@@ -121,7 +123,6 @@ async def update_all_members(guild: discord.Guild):
             except GeneralAPIError:
                 continue
 
-
     db_utils.clean_up_database()
     members_to_update = db_utils.get_all_updated_discord_users()
 
@@ -129,3 +130,71 @@ async def update_all_members(guild: discord.Guild):
         LOG.info("Updating member due to database clean up flag")
         member = guild.get_member(discord_id)
         await update_member(member, False)
+
+
+async def send_reminder(tag: str, reminder_time: ReminderTime, automated: bool):
+    """Send a reminder to the Reminders channel tagging users that have remaining decks.
+
+    Args:
+        tag: Tag of clan to send reminder to.
+        reminder_time: Only include people in reminder in the specified reminder time.
+        automated: Whether this is being sent as an automated reminder or through the send_reminder command.
+
+    Raises:
+        GeneralAPIError: Unable to get decks report.
+    """
+    decks_report = clash_utils.get_decks_report(tag)
+    preferred_reminder_times = db_utils.get_user_reminder_times(reminder_time)
+    channel = CHANNEL[SpecialChannel.Reminders]
+    clan_name = db_utils.get_clan_name(tag)
+    users_to_remind = ""
+    headers = [
+        "",
+        "__**1 deck remaining**__",
+        "__**2 decks remaining**__",
+        "__**3 decks remaining**__",
+        "__**4 decks remaining**__"
+    ]
+    current_header = headers[0]
+
+    for player_tag, player_name, decks_remaining in decks_report["active_members_with_remaining_decks"]:
+        if current_header != headers[decks_remaining]:
+            current_header = headers[decks_remaining]
+            users_to_remind += "\n" + current_header + "\n"
+
+        member = None
+
+        if player_tag in preferred_reminder_times:
+            member = discord.utils.get(channel.members, id=preferred_reminder_times[player_tag])
+
+        if member is None:
+            users_to_remind += f"{discord.utils.escape_markdown(player_name)}\n"
+        else:
+            users_to_remind += f"{member.mention}\n"
+
+    if users_to_remind:
+        message = f"**The following members of {discord.utils.escape_markdown(clan_name)} still have decks left to use today:**\n"
+        message += users_to_remind
+    else:
+        message = f"**All members of {discord.utils.escape_markdown(clan_name)} have already used all their decks today.**"
+
+    if automated:
+        if reminder_time == ReminderTime.US:
+            embed = discord.Embed(title="This is an automated reminder",
+                                  description=("Any Discord users that have their reminder time preference set to `US` were pinged."
+                                               " If you were pinged but would like to to be mentioned in the earlier reminder, use "
+                                               "the `/set_reminders` command and choose `EU`."))
+        elif reminder_time == ReminderTime.EU:
+            embed = discord.Embed(title="This is an automated reminder",
+                                  description=("Any Discord users that have their reminder time preference set to `EU` were pinged."
+                                               " If you were pinged but would like to to be mentioned in the later reminder, use "
+                                               "the `/set_reminders` command and choose `US`."))
+        elif reminder_time == ReminderTime.ALL:
+            embed = discord.Embed(title="This is an automated reminder",
+                                  description="Any Discord users were pinged regardless of their reminder time preference.")
+        else:
+            embed = None
+    else:
+        embed = None
+
+    await channel.send(message, embed=embed)

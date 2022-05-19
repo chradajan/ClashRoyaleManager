@@ -12,6 +12,7 @@ from utils.custom_types import (
     BattleStats,
     ClanRole,
     ClashData,
+    DecksReport,
     Participant,
     RiverRaceClan,
     RiverRaceInfo
@@ -528,6 +529,85 @@ def get_deck_usage_today(tag: str) -> Dict[str, int]:
         deck_usage[tag] = 0
 
     return deck_usage
+
+
+def get_decks_report(tag: str) -> DecksReport:
+    """Get a report containing detailed information about deck usage today.
+    Args:
+        tag: Tag of clan to get decks report of.
+
+    Returns:
+        Detailed lists of specified clan's deck usage.
+            remaining_decks: Maximum number of decks that could still be used today.
+            participants: Number of players who have used at least 1 deck today.
+            active_members_with_no_decks_used: Number of players in the clan that have not used decks.
+            active_members_with_remaining_decks: List of members in clan that could still battle.
+            active_members_without_remaining_decks: List of members in clan that have used 4 decks today.
+            inactive_members_with_decks_used: List of members no longer in clan that battled today while in the clan.
+            locked_out_active_members: List of members in clan that are locked out of battling today.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    LOG.info(f"Getting decks report for {tag}")
+    active_members = get_active_members_in_clan(tag)
+    participants = get_river_race_participants(tag)
+
+    decks_report: DecksReport = {
+        "remaining_decks": 200,
+        "participants": 0,
+        "active_members_with_no_decks_used": 0,
+        "active_members_with_remaining_decks": [],
+        "active_members_without_remaining_decks": [],
+        "inactive_members_with_decks_used": [],
+        "locked_out_active_members": []
+    }
+
+    for participant in participants:
+        if participant["decks_used_today"] > 0:
+            decks_report["remaining_decks"] -= participant["decks_used_today"]
+            decks_report["participants"] += 1
+
+    for participant in participants:
+        tag = participant["tag"]
+
+        if tag in active_members:
+            name = active_members[tag]["name"]
+        else:
+            name = participant["name"]
+
+        if participant["tag"] in active_members:
+            if participant["decks_used_today"] == 4:
+                decks_report["active_members_without_remaining_decks"].append((tag, name, 0))
+            elif participant["decks_used_today"] == 0:
+                decks_report["active_members_with_no_decks_used"] += 1
+                if decks_report["participants"] == 50:
+                    decks_report["locked_out_active_members"].append((tag, name, 4))
+                else:
+                    decks_report["active_members_with_remaining_decks"].append((tag, name, 4))
+            else:
+                decks_report["active_members_with_remaining_decks"].append((tag, name, (4 - participant["decks_used_today"])))
+        elif participant["decks_used_today"] > 0:
+            decks_report["inactive_members_with_decks_used"].append((tag, name, (4 - participant["decks_used_today"])))
+
+    decks_report["active_members_with_remaining_decks"].sort(key=lambda x: (x[2], x[1].lower()))
+    decks_report["active_members_without_remaining_decks"].sort(key=lambda x: (x[2], x[1].lower()))
+    decks_report["inactive_members_with_decks_used"].sort(key=lambda x: (x[2], x[1].lower()))
+    decks_report["locked_out_active_members"].sort(key=lambda x: (x[2], x[1].lower()))
+    return decks_report
+
+
+def get_remaining_decks_today(tag: str) -> Dict[str, int]:
+    """Get a dictionary of users that have remaining decks available.
+
+    Args:
+        tag: Tag of clan to get remaining decks for.
+
+    Returns:
+        Dictionary mapping player tags to their remaining decks count if they have not used four decks.
+    """
+    LOG.info(f"Getting dictionary of users and how many decks they have remaining in clan {tag}")
 
 
 def get_battle_day_stats(player_tag: str,

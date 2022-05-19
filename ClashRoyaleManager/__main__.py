@@ -7,6 +7,7 @@ import utils.db_utils as db_utils
 from cogs.automated_routines import AutomatedRoutines
 from cogs.listeners  import EventsManager
 from commands.context_menus import CONTEXT_MENUS
+from commands.leader_util_commands import LEADER_UTIL_COMMANDS
 from commands.update_commands import UPDATE_COMMANDS
 from commands.setup_commands import SETUP_COMMANDS
 from config.credentials import BOT_TOKEN
@@ -27,7 +28,7 @@ def main():
                        intents=intents)
 
     pre_initialization_groups = [*SETUP_COMMANDS]
-    post_initialization_groups = [*UPDATE_COMMANDS, *CONTEXT_MENUS]
+    post_initialization_groups = [*CONTEXT_MENUS, *LEADER_UTIL_COMMANDS, *UPDATE_COMMANDS]
 
     if db_utils.is_initialized():
         for command in pre_initialization_groups:

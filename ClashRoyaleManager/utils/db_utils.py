@@ -1,6 +1,7 @@
 """Functions that interface with the database."""
 
 import datetime
+from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import discord
@@ -21,6 +22,7 @@ from utils.custom_types import (
     ClashData,
     DatabaseRiverRaceClan,
     PrimaryClan,
+    ReminderTime,
     SpecialChannel,
     SpecialRole,
     StrikeCriteria,
@@ -428,6 +430,13 @@ def get_primary_clans() -> List[PrimaryClan]:
     return primary_clans
 
 
+def get_primary_clans_enum() -> Enum:
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT clans.tag, clans.name FROM clans INNER JOIN primary_clans ON clans.id = primary_clans.clan_id")
+    database.close()
+    return Enum("PrimaryClan", {clan["name"]: clan["tag"] for clan in cursor})
+
+
 def get_all_discord_users() -> Dict[int, str]:
     """Get dictionary of all Discord IDs and usernames in the database.
 
@@ -541,6 +550,46 @@ def get_most_recent_reset_time(tag: str) -> datetime.datetime:
     database.close()
     reset_times = sorted(query_result.values())
     return reset_times[-1] if reset_times else None
+
+
+def get_user_reminder_times(reminder_time: ReminderTime) -> Dict[str, int]:
+    """Get a dictionary of users on Discord with the specified reminder_time preference.
+
+    Args:
+        reminder_time: Get users that have set this as their preferred reminder time.
+
+    Returns:
+        Dictionary mapping tags to Discord IDs of Discord users that have reminder_time as their preference.
+    """
+    database, cursor = get_database_connection()
+
+    if reminder_time == ReminderTime.ALL:
+        cursor.execute("SELECT tag, discord_id FROM users WHERE discord_id IS NOT NULL")
+    else:
+        cursor.execute("SELECT tag, discord_id FROM users WHERE discord_id IS NOT NULL AND reminder_time = %s", reminder_time.value)
+
+    database.close()
+    return {user["tag"]: user["discord_id"] for user in cursor}
+
+
+def get_clan_name(tag: str) -> Union[str, None]:
+    """Get the name of a clan in the database from its tag.
+
+    Args:
+        tag: Tag of clan to get name of.
+
+    Returns:
+        Name of clan, or None if clan not in database.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT name FROM clans WHERE tag = %s", tag)
+    query_result = cursor.fetchone()
+    database.close()
+
+    if query_result is None:
+        return None
+
+    return query_result["name"]
 
 
 ############################################################################
