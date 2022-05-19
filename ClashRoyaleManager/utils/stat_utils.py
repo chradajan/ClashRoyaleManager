@@ -38,6 +38,11 @@ def update_clan_battle_day_stats(tag: str, post_race: bool):
             prior_medals, last_check = prior_medal_counts[player_tag]
 
             if participant["medals"] > prior_medals:
+                LOG.info(log_message("Participant has gained medals since last check",
+                                     name=participant["name"],
+                                     current_medals=participant["medals"],
+                                     prior_medals=prior_medals))
+
                 try:
                     stats = clash_utils.get_battle_day_stats(player_tag, tag, last_check, current_time)
                 except GeneralAPIError:
@@ -47,6 +52,11 @@ def update_clan_battle_day_stats(tag: str, post_race: bool):
                 stats_to_record.append((stats, participant["medals"]))
 
         elif participant["medals"] > 0:
+            LOG.info(log_message("New participant has gained medals since last check",
+                                 name=participant["name"],
+                                 current_medals=participant["medals"],
+                                 prior_medals=0))
+
             try:
                 stats = clash_utils.get_battle_day_stats(player_tag, tag, last_clan_check, current_time)
             except GeneralAPIError:

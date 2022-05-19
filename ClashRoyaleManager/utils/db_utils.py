@@ -119,11 +119,22 @@ def update_clan_affiliation(clash_data: ClashData, cursor: Optional[pymysql.curs
             clash_data["river_race_id"], _, _, _ = get_current_clan_river_race_ids(clash_data["clan_tag"])
 
             if clash_data["river_race_id"] is not None:
-                clash_data["last_check"] = get_last_check(clash_data["clan_tag"])
-                cursor.execute("INSERT INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check) VALUES\
-                                (%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s)\
-                                ON DUPLICATE KEY UPDATE clan_affiliation_id = clan_affiliation_id",
-                                clash_data)
+                cursor.execute("SELECT last_check, battle_time FROM river_races WHERE id = %(river_race_id)s", clash_data)
+                query_result = cursor.fetchone()
+                clash_data["last_check"] = query_result["last_check"]
+                is_battle_day = query_result["battle_time"]
+
+                if is_battle_day:
+                    cursor.execute("INSERT INTO river_race_user_data\
+                                    (clan_affiliation_id, river_race_id, last_check, tracked_since)\
+                                    VALUES (%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s, CURRENT_TIMESTAMP)\
+                                    ON DUPLICATE KEY UPDATE clan_affiliation_id = clan_affiliation_id",
+                                    clash_data)
+                else:
+                    cursor.execute("INSERT INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check)\
+                                    VALUES (%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s)\
+                                    ON DUPLICATE KEY UPDATE clan_affiliation_id = clan_affiliation_id",
+                                    clash_data)
 
     if close_connection:
         database.commit()
@@ -771,6 +782,36 @@ def set_last_check(tag: str) -> datetime.datetime:
     return query_result["last_check"]
 
 
+def set_battle_time(tag: str):
+    """Update a clan's river_race entry to indicate that its first Battle Day has begun.
+
+    Args:
+        tag: Tag of clan to update.
+    """
+    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    database, cursor = get_database_connection()
+    cursor.execute("UPDATE river_races SET battle_time = TRUE WHERE id = %s", (river_race_id))
+    database.commit()
+    database.close()
+
+
+def is_battle_time(tag: str) -> bool:
+    """Check it it's currently a Battle Day.
+
+    Args:
+        tag: Tag of clan to check.
+
+    Returns:
+        Whether it's currently a Battle Day.
+    """
+    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT battle_time FROM river_races WHERE id = %s", (river_race_id))
+    query_result = cursor.fetchone()
+    database.close()
+    return query_result["colosseum_week"]
+
+
 def is_colosseum_week(tag: str) -> bool:
     """Check if it's currently a Colosseum week.
 
@@ -796,9 +837,13 @@ def prepare_for_battle_days(tag: str):
     """
     river_race_id, clan_id, season_id, _ = get_current_clan_river_race_ids(tag)
     current_time = set_last_check(tag)
+    set_battle_time(tag)
     add_unregistered_users(tag)
     database, cursor = get_database_connection()
     cursor.execute("UPDATE river_race_user_data SET last_check = %s WHERE river_race_id = %s", (current_time, river_race_id))
+    cursor.execute("UPDATE river_race_user_data SET tracked_since = %s WHERE river_race_id = %s AND\
+                    clan_affiliation_id IN (SELECT id FROM clan_affiliations WHERE clan_id = %s AND role IS NOT NULL)",
+                   (current_time, river_race_id, clan_id))
 
     try:
         clans_in_race = clash_utils.get_clans_in_race(tag, False)
@@ -839,8 +884,8 @@ def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
     cursor.execute(reset_time_query, (river_race_id))
 
     last_check = get_last_check(tag)
-    update_usage_query = f"INSERT INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check, {day_key})\
-                        VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE {day_key} = %s, last_check = last_check"
+    update_usage_query = (f"INSERT INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check, {day_key}) "
+                          f"VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE {day_key} = %s, last_check = last_check")
 
     for player_tag, decks_used in deck_usage.items():
         cursor.execute("SELECT id FROM users WHERE tag = %s", (player_tag))
@@ -951,6 +996,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, int]]):
         cursor.execute("INSERT INTO river_race_user_data (\
                             clan_affiliation_id,\
                             river_race_id,\
+                            tracked_since,\
                             medals,\
                             regular_wins,\
                             regular_losses,\
@@ -965,6 +1011,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, int]]):
                         ) VALUES (\
                             %(clan_affiliation_id)s,\
                             %(river_race_id)s,\
+                            CURRENT_TIMESTAMP,\
                             %(medals)s,\
                             %(regular_wins)s,\
                             %(regular_losses)s,\
@@ -977,6 +1024,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, int]]):
                             %(boat_wins)s,\
                             %(boat_losses)s\
                         ) ON DUPLICATE KEY UPDATE\
+                            tracked_since = COALESCE(tracked_since, CURRENT_TIMESTAMP),\
                             medals = %(medals)s,\
                             regular_wins = regular_wins + %(regular_wins)s,\
                             regular_losses = regular_losses + %(regular_losses)s,\
