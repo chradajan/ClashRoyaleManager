@@ -6,7 +6,7 @@ from discord import app_commands
 import utils.clash_utils as clash_utils
 import utils.setup_utils as setup_utils
 from log.logger import LOG
-from utils.custom_types import ClanRole, SpecialChannel, SpecialRole, StrikeCriteria
+from utils.custom_types import ClanRole, SpecialChannel, SpecialRole, StrikeType
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
 
@@ -94,7 +94,7 @@ async def register_primary_clan(interaction: discord.Interaction,
                                 track_stats: bool,
                                 send_reminders: bool,
                                 assign_strikes: bool,
-                                strike_type: StrikeCriteria,
+                                strike_type: StrikeType,
                                 strike_threshold: app_commands.Range[int, 0, 3600]):
     """Designate a clan as a primary clan."""
     processed_tag = clash_utils.process_clash_royale_tag(tag)

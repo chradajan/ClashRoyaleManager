@@ -10,7 +10,7 @@ from utils.custom_types import (
     ClanRole,
     SpecialChannel,
     SpecialRole,
-    StrikeCriteria
+    StrikeType
 )
 
 def set_clan_role(clan_role: ClanRole, discord_role: discord.Role):
@@ -60,7 +60,7 @@ def set_primary_clan(tag: str,
                      track_stats: bool,
                      send_reminders: bool,
                      assign_strikes: bool,
-                     strike_type: StrikeCriteria,
+                     strike_type: StrikeType,
                      strike_threshold: int) -> str:
     """Designate the specified clan as a primary clan.
 

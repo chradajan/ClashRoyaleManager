@@ -19,13 +19,14 @@ from log.logger import LOG, log_message
 from utils.custom_types import (
     BattleStats,
     ClanRole,
+    ClanStrikeInfo,
     ClashData,
     DatabaseRiverRaceClan,
     PrimaryClan,
     ReminderTime,
     SpecialChannel,
     SpecialRole,
-    StrikeCriteria,
+    StrikeType,
 )
 from utils.exceptions import GeneralAPIError
 
@@ -116,7 +117,7 @@ def update_clan_affiliation(clash_data: ClashData, cursor: Optional[pymysql.curs
             # Create River Race user data entry for user if necessary.
             cursor.execute("SELECT id FROM clan_affiliations WHERE user_id = %(user_id)s AND clan_id = %(clan_id)s", clash_data)
             clash_data["clan_affiliation_id"] = cursor.fetchone()["id"]
-            clash_data["river_race_id"], _, _, _ = get_current_clan_river_race_ids(clash_data["clan_tag"])
+            clash_data["river_race_id"], _, _, _ = get_clan_river_race_ids(clash_data["clan_tag"])
 
             if clash_data["river_race_id"] is not None:
                 cursor.execute("SELECT last_check, battle_time FROM river_races WHERE id = %(river_race_id)s", clash_data)
@@ -128,13 +129,14 @@ def update_clan_affiliation(clash_data: ClashData, cursor: Optional[pymysql.curs
                     cursor.execute("INSERT INTO river_race_user_data\
                                     (clan_affiliation_id, river_race_id, last_check, tracked_since)\
                                     VALUES (%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s, CURRENT_TIMESTAMP)\
-                                    ON DUPLICATE KEY UPDATE clan_affiliation_id = clan_affiliation_id",
-                                    clash_data)
+                                    ON DUPLICATE KEY UPDATE\
+                                    tracked_since = COALESCE(tracked_since, CURRENT_TIMESTAMP), last_check = last_check",
+                                   clash_data)
                 else:
                     cursor.execute("INSERT INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check)\
                                     VALUES (%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s)\
                                     ON DUPLICATE KEY UPDATE clan_affiliation_id = clan_affiliation_id",
-                                    clash_data)
+                                   clash_data)
 
     if close_connection:
         database.commit()
@@ -433,7 +435,7 @@ def get_primary_clans() -> List[PrimaryClan]:
             "track_stats": clan["track_stats"],
             "send_reminders": clan["send_reminders"],
             "assign_strikes": clan["assign_strikes"],
-            "strike_type": StrikeCriteria(clan["strike_type"]),
+            "strike_type": StrikeType(clan["strike_type"]),
             "strike_threshold": clan["strike_threshold"]
         }
         primary_clans.append(clan_data)
@@ -513,21 +515,35 @@ def get_all_clan_affiliations() -> List[Tuple[str, str, str, ClanRole]]:
     return clan_affiliations
 
 
-def get_current_clan_river_race_ids(tag: str) -> Tuple[int, int, int, int]:
+def get_clan_river_race_ids(tag: str, n: int=0) -> Tuple[int, int, int, int]:
     """Get a clan's current River Race entry id, clan_id, season_id, and week.
 
     Args:
         tag: Tag of clan to get IDs of.
+        n: How many River races back to get IDs of. 0 is current race, 1 is previous race, etc.
 
     Returns:
         Tuple of id, clan_id, season_id, and week of most recent River Race entry of specified clan, or None if no entry exists.
     """
     database, cursor = get_database_connection()
-    cursor.execute("SELECT id, clan_id, season_id, week FROM river_races WHERE\
-                    clan_id = (SELECT id FROM clans WHERE tag = %s) AND season_id = (SELECT MAX(id) FROM seasons)",
-                   (tag))
-    query_result = cursor.fetchall()
-    query_result.sort(key=lambda x: x["week"], reverse=True)
+    river_race = None
+    cursor.execute("SELECT MAX(id) AS id FROM seasons")
+    season_id = cursor.fetchone()["id"]
+
+    while n >= 0 and season_id > 0:
+        cursor.execute("SELECT id, clan_id, season_id, week FROM river_races WHERE\
+                        clan_id = (SELECT id FROM clans WHERE tag = %s) AND season_id = %s",
+                       (tag, season_id))
+        query_result = cursor.fetchall()
+
+        if n < len(query_result):
+            query_result.sort(key=lambda x: x["week"], reverse=True)
+            river_race = query_result[n]
+            break
+        else:
+            season_id -= 1
+            n -= len(query_result)
+    
     database.close()
 
     river_race_id = None
@@ -535,12 +551,11 @@ def get_current_clan_river_race_ids(tag: str) -> Tuple[int, int, int, int]:
     season_id = None
     week = None
 
-    if query_result is not None:
-        most_recent_river_race = query_result[0]
-        river_race_id = most_recent_river_race["id"]
-        clan_id = most_recent_river_race["clan_id"]
-        season_id = most_recent_river_race["season_id"]
-        week = most_recent_river_race["week"]
+    if river_race is not None:
+        river_race_id = river_race["id"]
+        clan_id = river_race["clan_id"]
+        season_id = river_race["season_id"]
+        week = river_race["week"]
 
     return (river_race_id, clan_id, season_id, week)
 
@@ -554,12 +569,13 @@ def get_most_recent_reset_time(tag: str) -> datetime.datetime:
     Returns:
         Most recent daily reset time, or None if no resets are currently logged.
     """
-    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
     database, cursor = get_database_connection()
     cursor.execute("SELECT day_1, day_2, day_3, day_4, day_5, day_6, day_7 FROM river_races WHERE id = %s", (river_race_id))
     query_result = cursor.fetchone()
     database.close()
-    reset_times = sorted(query_result.values())
+    reset_times = [reset_time for reset_time in query_result.values() if reset_time is not None]
+    reset_times.sort()
     return reset_times[-1] if reset_times else None
 
 
@@ -755,7 +771,7 @@ def get_last_check(tag: str) -> datetime.datetime:
     Returns:
         Time of last check.
     """
-    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
     database, cursor = get_database_connection()
     cursor.execute("SELECT last_check FROM river_races WHERE id = %s", (river_race_id))
     query_result = cursor.fetchone()
@@ -772,7 +788,7 @@ def set_last_check(tag: str) -> datetime.datetime:
     Returns:
         New last_check value.
     """
-    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
     database, cursor = get_database_connection()
     cursor.execute("UPDATE river_races SET last_check = CURRENT_TIMESTAMP WHERE id = %s", (river_race_id))
     cursor.execute("SELECT last_check FROM river_races WHERE id = %s", (river_race_id))
@@ -788,7 +804,7 @@ def set_battle_time(tag: str):
     Args:
         tag: Tag of clan to update.
     """
-    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
     database, cursor = get_database_connection()
     cursor.execute("UPDATE river_races SET battle_time = TRUE WHERE id = %s", (river_race_id))
     database.commit()
@@ -804,7 +820,7 @@ def is_battle_time(tag: str) -> bool:
     Returns:
         Whether it's currently a Battle Day.
     """
-    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
     database, cursor = get_database_connection()
     cursor.execute("SELECT battle_time FROM river_races WHERE id = %s", (river_race_id))
     query_result = cursor.fetchone()
@@ -821,12 +837,43 @@ def is_colosseum_week(tag: str) -> bool:
     Returns:
         Whether it's currently Colosseum week.
     """
-    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
     database, cursor = get_database_connection()
     cursor.execute("SELECT colosseum_week FROM river_races WHERE id = %s", (river_race_id))
     query_result = cursor.fetchone()
     database.close()
     return query_result["colosseum_week"]
+
+
+def set_completed_saturday(tag: str, status: bool):
+    """Set whether a clan crossed the finish line early.
+
+    Args:
+        tag: Tag of clan to set completion status of.
+        status: Whether they crossed early or not.
+    """
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
+    database, cursor = get_database_connection()
+    cursor.execute("UPDATE river_races SET completed_saturday = %s WHERE id = %s", (status, river_race_id))
+    database.commit()
+    database.close()
+
+
+def is_completed_saturday(tag: str) -> bool:
+    """Get whether a clan crossed the finish line early.
+
+    Args:
+        tag: Tag of clan to check race completion status of.
+
+    Returns:
+        Whether the specified clan crossed the finish line early.
+    """
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT completed_saturday FROM river_races WHERE id = %s", (river_race_id))
+    query_result = cursor.fetchone()
+    database.close()
+    return query_result["completed_saturday"]
 
 
 def prepare_for_battle_days(tag: str):
@@ -835,7 +882,7 @@ def prepare_for_battle_days(tag: str):
     Args:
         tag: Tag of clan to prepare for.
     """
-    river_race_id, clan_id, season_id, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, clan_id, season_id, _ = get_clan_river_race_ids(tag)
     current_time = set_last_check(tag)
     set_battle_time(tag)
     add_unregistered_users(tag)
@@ -868,7 +915,7 @@ def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
         reset_time: Time that daily reset occurred.
         deck_usage: Dictionary of player tags mapped to their decks used today in the specified clan.
     """
-    river_race_id, clan_id, _, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, clan_id, _, _ = get_clan_river_race_ids(tag)
 
     if river_race_id is None:
         LOG.warning(log_message("Missing river_races entry", tag=tag, weekday=weekday))
@@ -929,7 +976,7 @@ def get_medal_counts(tag: str) -> Dict[str, Tuple[int, datetime.datetime]]:
     Returns:
         Dictionary mapping player tags to their medals and last check times for the current River Race of the specified clan.
     """
-    river_race_id, _, _, _ = get_current_clan_river_race_ids(tag)
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
 
     if river_race_id is None:
         LOG.warning(f"Could not find River Race entry for clan {tag}")
@@ -957,7 +1004,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, int]]):
         return
 
     clan_tag = stats[0][0]["clan_tag"]
-    river_race_id, clan_id, _, _ = get_current_clan_river_race_ids(clan_tag)
+    river_race_id, clan_id, _, _ = get_clan_river_race_ids(clan_tag)
 
     if river_race_id is None:
         LOG.warning(log_message("Missing river_races entry", clan_tag=clan_tag))
@@ -1051,7 +1098,7 @@ def get_current_season_river_race_clans(tag: str) -> Dict[str, DatabaseRiverRace
     Returns:
         Dictionary mapping clan tags to their saved data.
     """
-    _, clan_id, season_id, _ = get_current_clan_river_race_ids(tag)
+    _, clan_id, season_id, _ = get_clan_river_race_ids(tag)
     database, cursor = get_database_connection()
     cursor.execute("SELECT * FROM river_race_clans WHERE clan_id = %s AND season_id = %s", (clan_id, season_id))
     database.close()
@@ -1124,3 +1171,98 @@ def prepare_for_river_race(tag: str, force: bool=False):
 
     database.commit()
     database.close()
+
+
+########################################
+#    ____  _        _ _                #
+#   / ___|| |_ _ __(_) | _____  ___    #
+#   \___ \| __| '__| | |/ / _ \/ __|   #
+#    ___) | |_| |  | |   <  __/\__ \   #
+#   |____/ \__|_|  |_|_|\_\___||___/   #
+#                                      #
+########################################
+
+def get_strike_determination_data(tag: str) -> ClanStrikeInfo:
+    """Get data needed from a clan's most recent River Race to determine who should receive a strike.
+
+    Args:
+        tag: Tag of clan to get strike data for.
+    """
+    river_race_id, clan_id, _, _ = get_clan_river_race_ids(tag, 1)
+
+    if river_race_id is None:
+        LOG.error("Could not find ID of most recent River Race")
+        return None
+
+    database, cursor = get_database_connection()
+    strike_info: ClanStrikeInfo = {}
+
+    cursor.execute("SELECT strike_type, strike_threshold FROM primary_clans WHERE clan_id = %s", (clan_id))
+    query_result = cursor.fetchone()
+    strike_info["strike_type"] = StrikeType(query_result["strike_type"])
+    strike_info["strike_threshold"] = query_result["strike_threshold"]
+
+    cursor.execute("SELECT completed_saturday, day_4, day_5, day_6, day_7 FROM river_races WHERE id = %s", (river_race_id))
+    query_result = cursor.fetchone()
+    strike_info["completed_saturday"] = query_result["completed_saturday"]
+    strike_info["reset_times"] = [query_result[day_key] for day_key in ["day_4", "day_5", "day_6", "day_7"]]
+
+    cursor.execute("SELECT discord_id, name, tag, tracked_since, medals, day_4, day_5, day_6, day_7 FROM river_race_user_data\
+                    INNER JOIN clan_affiliations ON river_race_user_data.clan_affiliation_id = clan_affiliations.id\
+                    INNER JOIN users ON clan_affiliations.user_id = users.id\
+                    WHERE river_race_id = %s AND tracked_since IS NOT NULL",
+                   (river_race_id))
+    database.close()
+    strike_info["users"] = {}
+
+    for user in cursor:
+        strike_info["users"][user["tag"]] = {
+            "discord_id": user["discord_id"],
+            "name": user["name"],
+            "tracked_since": user["tracked_since"],
+            "medals": user["medals"],
+            "deck_usage": [user[day_key] for day_key in ["day_4", "day_5", "day_6", "day_7"]]
+        }
+
+    return strike_info
+
+
+def update_strikes(search_key: Union[int, str], delta: int) -> Tuple[Union[int, None], Union[int, None]]:
+    """Give or remove strikes to a user.
+
+    Args:
+        search_key: Either the Discord ID or player tag of the user to update strikes for.
+        delta: Number of strikes to give or take.
+
+    Returns:
+        Tuple of previous strike count and updated strike count, or (None, None) if user is not in database.
+    """
+    database, cursor = get_database_connection()
+
+    if isinstance(search_key, int):
+        cursor.execute("SELECT id, strikes FROM users WHERE discord_id = %s", (search_key))
+    elif isinstance(search_key, str):
+        cursor.execute("SELECT id, strikes FROM users WHERE tag = %s", (search_key))
+    else:
+        LOG.warning(log_message("Tried updating strikes with invalid search key", search_key=search_key, delta=delta))
+        database.close()
+        return (None, None)
+
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        LOG.debug(log_message("Tried updating strikes of user not in database", search_key=search_key, delta=delta))
+        database.close()
+        return (None, None)
+
+    user_id = query_result["id"]
+    previous_strike_count = query_result["strikes"]
+    updated_strike_count = previous_strike_count + delta
+
+    if updated_strike_count < 0:
+        updated_strike_count = 0
+
+    cursor.execute("UPDATE users SET strikes = %s WHERE id = %s", (updated_strike_count, user_id))
+    database.commit()
+    database.close()
+    return (previous_strike_count, updated_strike_count)

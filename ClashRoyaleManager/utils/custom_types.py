@@ -1,7 +1,7 @@
 """Custom types used by ClashRoyaleManager."""
 
 import datetime
-from enum import auto, Enum
+from enum import Enum
 from typing import (
     Dict,
     List,
@@ -9,6 +9,13 @@ from typing import (
     TypedDict,
     Union
 )
+
+PlayerTag = str
+PlayerName = str
+ClanTag = str
+ClanName = str
+DecksRemaining = int
+
 
 class ReminderTime(Enum):
     """Valid times to receive automated reminders."""
@@ -39,7 +46,7 @@ class SpecialChannel(Enum):
     AdminOnly = "admin_only"
 
 
-class StrikeCriteria(Enum):
+class StrikeType(Enum):
     """Enum of criteria used to determine who receives automated strikes."""
     Decks = "decks"
     Medals = "medals"
@@ -47,8 +54,8 @@ class StrikeCriteria(Enum):
 
 class ClashData(TypedDict):
     """Dictionary containing data about user from the Clash Royale API."""
-    tag: str
-    name: str
+    tag: PlayerTag
+    name: PlayerName
     role: Union[ClanRole, None]
     exp_level: int
     trophies: int
@@ -56,38 +63,38 @@ class ClashData(TypedDict):
     cards: Dict[int, int]
     found_cards: int
     total_cards: int
-    clan_name: Union[str, None]
-    clan_tag: Union[str, None]
+    clan_tag: Union[ClanTag, None]
+    clan_name: Union[ClanName, None]
 
 
 class PrimaryClan(TypedDict):
     """Dictionary containing information about a primary clan."""
-    tag: str
-    name: str
+    tag: ClanTag
+    name: ClanName
     id: int
     discord_role_id: int
     track_stats: bool
     send_reminders: bool
     assign_strikes: bool
-    strike_type: StrikeCriteria
+    strike_type: StrikeType
     strike_threshold: int
 
 
 class RiverRaceInfo(TypedDict):
     """Information about a clan's current River Race."""
-    tag: str
-    name: str
+    tag: ClanTag
+    name: ClanName
     start_time: datetime.datetime
     colosseum_week: bool
     completed_saturday: bool
     week: int
-    clans: List[Tuple[str, str]] # (tag, name)
+    clans: List[Tuple[ClanTag, ClanName]]
 
 
 class RiverRaceClan(TypedDict):
     """Dictionary containing data about a clan's stats in a river race."""
-    tag: str
-    name: str
+    tag: ClanTag
+    name: ClanName
     medals: int
     total_decks_used: int
     decks_used_today: int
@@ -96,8 +103,8 @@ class RiverRaceClan(TypedDict):
 
 class Participant(TypedDict):
     """Dictionary containing data about a participant in a river race."""
-    tag: str
-    name: str
+    tag: PlayerTag
+    name: PlayerName
     medals: int
     repair_points: int
     boat_attacks: int
@@ -107,8 +114,8 @@ class Participant(TypedDict):
 
 class BattleStats(TypedDict):
     """Dictionary containing a user's wins/losses on Battle Days."""
-    player_tag: str
-    clan_tag: str
+    player_tag: PlayerTag
+    clan_tag: ClanTag
     regular_wins: int
     regular_losses: int
     special_wins: int
@@ -126,8 +133,8 @@ class DatabaseRiverRaceClan(TypedDict):
     id: int
     clan_id: int
     season_id: int
-    tag: str
-    name: str
+    tag: ClanTag
+    name: ClanName
     current_race_medals: int
     total_season_medals: int
     current_race_total_decks: int
@@ -137,10 +144,28 @@ class DatabaseRiverRaceClan(TypedDict):
 
 class DecksReport(TypedDict):
     """Dictionary containing a report of deck usage today."""
-    remaining_decks: int
+    remaining_decks: DecksRemaining
     participants: int
     active_members_with_no_decks_used: int
-    active_members_with_remaining_decks: List[Tuple[str, str, int]]     # (tag, name, decks_remaining)
-    active_members_without_remaining_decks: List[Tuple[str, str, int]]  # (tag, name, decks_remaining)
-    inactive_members_with_decks_used: List[Tuple[str, str, int]]        # (tag, name, decks_remaining)
-    locked_out_active_members: List[Tuple[str, str, int]]               # (tag, name, decks_remaining)
+    active_members_with_remaining_decks: List[Tuple[PlayerTag, PlayerName, DecksRemaining]]
+    active_members_without_remaining_decks: List[Tuple[PlayerTag, PlayerName, DecksRemaining]]
+    inactive_members_with_decks_used: List[Tuple[PlayerTag, PlayerName, DecksRemaining]]
+    locked_out_active_members: List[Tuple[PlayerTag, PlayerName, DecksRemaining]]
+
+
+class UserStrikeInfo(TypedDict):
+    """Dictionary of data needed to determine whether a user should receive a strike."""
+    discord_id: int
+    name: PlayerName
+    tracked_since: datetime.datetime
+    medals: int
+    deck_usage: List[Union[int, None]]
+
+
+class ClanStrikeInfo(TypedDict):
+    """Dictionary of data needed to determine who in a clan should receive a strike."""
+    strike_type: StrikeType
+    strike_threshold: int
+    completed_saturday: bool
+    reset_times: List[datetime.datetime]
+    users: Dict[PlayerTag, UserStrikeInfo]
