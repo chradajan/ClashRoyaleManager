@@ -10,11 +10,11 @@ from utils.channel_manager import CHANNEL
 from utils.custom_types import ReminderTime, SpecialChannel
 from utils.exceptions import GeneralAPIError
 
-PRIMARY_CLANS_ENUM = db_utils.get_primary_clans_enum()
+PRIMARY_CLANS = db_utils.get_primary_clans_enum()
 
 @app_commands.command()
 @app_commands.describe(clan="Which clan to send a reminder for")
-async def send_reminder(interaction: discord.Interaction, clan: PRIMARY_CLANS_ENUM):
+async def send_reminder(interaction: discord.Interaction, clan: PRIMARY_CLANS):
     """Send a reminder to members of a clan that have not used all their decks today."""
     LOG.command_start(interaction, clan=clan)
 

@@ -17,6 +17,7 @@ from config.credentials import (
 )
 from log.logger import LOG, log_message
 from utils.custom_types import (
+    AutomatedRoutine,
     BattleStats,
     ClanRole,
     ClanStrikeInfo,
@@ -1266,3 +1267,43 @@ def update_strikes(search_key: Union[int, str], delta: int) -> Tuple[Union[int, 
     database.commit()
     database.close()
     return (previous_strike_count, updated_strike_count)
+
+
+###############################################################
+#     _         _                        _   _                #
+#    / \  _   _| |_ ___  _ __ ___   __ _| |_(_) ___  _ __     #
+#   / _ \| | | | __/ _ \| '_ ` _ \ / _` | __| |/ _ \| '_ \    #
+#  / ___ \ |_| | || (_) | | | | | | (_| | |_| | (_) | | | |   #
+# /_/   \_\__,_|\__\___/|_| |_| |_|\__,_|\__|_|\___/|_| |_|   #
+#                                                             #
+###############################################################
+
+def set_automated_routine(tag: str, routine: AutomatedRoutine, status: bool):
+    """Update the status of an automated task for a primary clan.
+
+    Args:
+        tag: Tag of clan to change status for.
+        routine: Which automated routine to update the status of.
+        status: New status to set for the specified routine.
+    """
+    database, cursor = get_database_connection()
+    query = f"UPDATE primary_clans SET {routine.value} = %s WHERE clan_id = (SELECT id FROM clans WHERE tag = %s)"
+    cursor.execute(query, (status, tag))
+    database.commit()
+    database.close()
+
+
+def set_participation_requirements(tag: str, strike_type: StrikeType, strike_threshold: int):
+    """Update a primary clan's participation requirements.
+    
+    Args:
+        tag: Tag of clan to change participation requirements of.
+        strike_type: What kind of participation requirement to change to.
+        strike_threshold: Number of medals/decks needed for the specified strike type.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("UPDATE primary_clans SET strike_type = %s, strike_threshold = %s\
+                    WHERE clan_id = (SELECT id FROM clans WHERE tag = %s)",
+                   (strike_type.value, strike_threshold, tag))
+    database.commit()
+    database.close()

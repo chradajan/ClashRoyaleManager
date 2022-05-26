@@ -52,6 +52,13 @@ class StrikeType(Enum):
     Medals = "medals"
 
 
+class AutomatedRoutine(Enum):
+    """Enum of automated routines that can be toggled for primary clans."""
+    Reminders = "send_reminders"
+    Stats = "track_stats"
+    Strikes = "assign_strikes"
+
+
 class ClashData(TypedDict):
     """Dictionary containing data about user from the Clash Royale API."""
     tag: PlayerTag
