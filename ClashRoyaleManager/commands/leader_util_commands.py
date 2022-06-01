@@ -59,7 +59,7 @@ async def export(interaction: discord.Interaction,
         path = db_utils.export_clan_data(selection.value, selection.name, active_members_only, weeks)
 
     await interaction.response.send_message(file=discord.File(path))
-    LOG.command_end
+    LOG.command_end()
 
 
 @send_reminder.error

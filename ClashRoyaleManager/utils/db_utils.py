@@ -1273,6 +1273,26 @@ def update_strikes(search_key: Union[int, str], delta: int) -> Tuple[Union[int, 
     return (previous_strike_count, updated_strike_count)
 
 
+def get_strike_count(id: int) -> int:
+    """Get how many strikes a user has.
+
+    Args:
+        id: Discord ID of user to check.
+
+    Returns:
+        Number of strikes that specified user has.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT strikes FROM users WHERE discord_id = %s", (id))
+    query_result = cursor.fetchone()
+    database.close()
+
+    if query_result is None:
+        return 0
+
+    return query_result["strikes"]
+
+
 ##############################
 #    _  ___      _           #
 #   | |/ (_) ___| | _____    #

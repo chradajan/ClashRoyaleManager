@@ -29,6 +29,24 @@ async def update_context_menu(interaction: discord.Interaction, member: discord.
     LOG.command_end()
 
 
+@app_commands.context_menu(name="Give Strike")
+async def give_strike_context_menu(interaction: discord.Interaction, member: discord.Member):
+    """Give a strike to this member."""
+    LOG.command_start(interaction, target=member)
+    embed = await discord_utils.update_strikes_helper(member.id, member.display_name, 1)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    LOG.command_end()
+
+
+@app_commands.context_menu(name="Remove Strike")
+async def remove_strike_context_menu(interaction: discord.Interaction, member: discord.Member):
+    """Remove a strike from this member."""
+    LOG.command_start(interaction, target=member)
+    embed = await discord_utils.update_strikes_helper(member.id, member.display_name, -1)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    LOG.command_end()
+
+
 @update_context_menu.error
 async def context_menus_error_hander(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """Error handler for setup commands."""
@@ -48,5 +66,7 @@ async def context_menus_error_hander(interaction: discord.Interaction, error: ap
 
 CONTEXT_MENUS = [
     update_context_menu,
+    give_strike_context_menu,
+    remove_strike_context_menu,
 ]
 """Context menu commands."""

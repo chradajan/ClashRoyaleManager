@@ -1,5 +1,7 @@
 """Various utility functions for Discord related needs."""
 
+from typing import List, Tuple, Union
+
 import discord
 
 import utils.clash_utils as clash_utils
@@ -178,3 +180,100 @@ async def send_reminder(tag: str, reminder_time: ReminderTime):
         message = f"**All members of {discord.utils.escape_markdown(clan_name)} have already used all their decks today.**"
 
     await channel.send(message)
+
+
+def duplicate_names_embed(users: List[Tuple[str, str, str]]) -> discord.Embed:
+    """Create an embed listing out users with identical names.
+
+    Args:
+        users: List of users' tags, names, and clan names that have the same player name.
+
+    Returns:
+        Embed listing out users and info about how to proceed.
+    """
+    embed = discord.Embed(title="Duplicate names detected", color=discord.Color.yellow())
+    embed.add_field(name="Which user did you mean?",
+                    value=f"Try reissuing the command with the user's tag instead of their name.",
+                    inline=False)
+
+    for tag, name, clan_name in users:
+        embed.add_field(name=f"{name}",
+                        value=f"```Tag: {tag}\nClan: {clan_name}```",
+                        inline=False)
+
+    return embed
+
+
+def user_not_found_embed(name: str) -> discord.Embed:
+    """Create an embed explaining that the specified user does not exist in the database.
+
+    Args:
+        name: Name of user that was searched for.
+
+    Returns:
+        Embed stating the user could not be found.
+    """
+    embed = discord.Embed(title="User does not exist in database",
+                          description=(f"No user named {discord.utils.escape_markdown(name)} was found in the database. "
+                                       "If they are on Discord, make sure they've used the `/register` command."),
+                          color=discord.Color.red())
+    return embed
+
+
+def get_member_from_mention(interaction: discord.Interaction, mention: str) -> Union[discord.Member, None]:
+    """Get a Discord member from their mention string.
+    
+    Args:
+        interaction: Interaction to get guild members from.
+        mention: String form of a mention of a user.
+    
+    Returns:
+        Member if a member exists, otherwise None.
+    """
+    member = None
+
+    if mention.endswith(">"):
+        if mention.startswith("<@!"):
+            try:
+                id = int(mention[3:-1])
+                member = discord.utils.get(interaction.guild.members, id=id)
+            except ValueError:
+                pass
+        elif mention.startswith("<@"):
+            try:
+                id = int(mention[2:-1])
+                member = discord.utils.get(interaction.guild.members, id=id)
+            except ValueError:
+                pass
+
+    return member
+
+
+async def update_strikes_helper(search_key: Union[int, str], name: str, delta: int) -> discord.Embed:
+    """Update a user's strike count and send a message to the strikes channel confirming the change.
+
+    Args:
+        search_key: Either the Discord ID or tag of the user to strike.
+        name: Name of user to update strikes of.
+
+    Returns:
+        Embed confirming the update.
+    """
+    prev, curr = db_utils.update_strikes(search_key, delta)
+
+    if prev is None:
+        return user_not_found_embed(name)
+
+    title = "has received a strike" if delta > 0 else "has had a strike removed"
+    embed = discord.Embed(title=f"{discord.utils.escape_markdown(name)} {title}", description=f"{prev} -> {curr}")
+    member = None
+    message = None
+
+    if isinstance(search_key, int):
+        member = discord.utils.get(CHANNEL[SpecialChannel.Strikes].members, id=search_key)
+
+        if member is not None:
+            message = f"{member.mention}"
+
+    await CHANNEL[SpecialChannel.Strikes].send(content=message, embed=embed)
+    return embed
