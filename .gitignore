@@ -1,5 +1,6 @@
 __pycache__/
 .vscode/
 backups/
+export_data/
 logs/
 credentials.py

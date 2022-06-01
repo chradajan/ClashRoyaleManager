@@ -1,11 +1,15 @@
 """Functions that interface with the database."""
 
 import datetime
+import os
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import discord
 import pymysql
+import xlsxwriter
+from pymysql.cursors import DictCursor
+from xlsxwriter.worksheet import Worksheet
 
 import utils.clash_utils as clash_utils
 import utils.discord_utils as discord_utils
@@ -31,7 +35,7 @@ from utils.custom_types import (
 )
 from utils.exceptions import GeneralAPIError
 
-def get_database_connection() -> Tuple[pymysql.Connection, pymysql.cursors.DictCursor]:
+def get_database_connection() -> Tuple[pymysql.Connection, DictCursor]:
     """Establish connection to database.
 
     Returns:
@@ -1269,6 +1273,54 @@ def update_strikes(search_key: Union[int, str], delta: int) -> Tuple[Union[int, 
     return (previous_strike_count, updated_strike_count)
 
 
+##############################
+#    _  ___      _           #
+#   | |/ (_) ___| | _____    #
+#   | ' /| |/ __| |/ / __|   #
+#   | . \| | (__|   <\__ \   #
+#   |_|\_\_|\___|_|\_\___/   #
+#                            #
+##############################
+
+def kick_user(tag: str) -> bool:
+    """Log a kick for a user.
+
+    Args:
+        tag: Tag of user to kick.
+
+    Returns:
+        Whether the kick was successfully logged.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT id FROM users WHERE tag = %s", (tag))
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        database.close()
+        return False
+
+    user_id = query_result["id"]
+    cursor.execute("INSERT INTO kicks (user_id) VALUES (%s)", (user_id))
+    database.commit()
+    database.close()
+    return True
+
+
+def get_kicks(tag: str) -> List[datetime.datetime]:
+    """Get a list of times a user was kicked.
+
+    Args:
+        tag: Tag of user to get kicks of.
+
+    Returns:
+        List of times the specified user was kicked.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT time FROM kicks WHERE user_id = (SELECT id FROM users WHERE tag = %s)", (tag))
+    database.close()
+    return [kick["time"] for kick in cursor]
+
+
 ###############################################################
 #     _         _                        _   _                #
 #    / \  _   _| |_ ___  _ __ ___   __ _| |_(_) ___  _ __     #
@@ -1307,3 +1359,399 @@ def set_participation_requirements(tag: str, strike_type: StrikeType, strike_thr
                    (strike_type.value, strike_threshold, tag))
     database.commit()
     database.close()
+
+
+#########################################
+#    _____                       _      #
+#   | ____|_  ___ __   ___  _ __| |_    #
+#   |  _| \ \/ / '_ \ / _ \| '__| __|   #
+#   | |___ >  <| |_) | (_) | |  | |_    #
+#   |_____/_/\_\ .__/ \___/|_|   \__|   #
+#              |_|                      #
+#########################################
+
+def get_file_path(name: str) -> str:
+    """Get path of new spreadsheet file that should be created during export process.
+
+    Args:
+        name: Name of clan being exported.
+
+    Returns:
+        Path to new file.
+    """
+    path = "export_data"
+
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    files = [os.path.join(path, f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+    files.sort(key=os.path.getmtime)
+
+    if len(files) >= 5:
+        os.remove(files[0])
+
+    file_name = name.replace(" ", "_") + "_" + str(datetime.datetime.now().date()) + ".xlsx"
+    new_path = os.path.join(path, file_name)
+
+    return new_path
+
+
+def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
+    """Export relevant data about a clan to a spreadsheet.
+
+    Args:
+        tag: Tag of clan to export.
+        name: Name of clan to export.
+        active_only: Whether to only include active members of the clan or anyone with an affiliation to it.
+        weeks: How many weeks to show stats for
+
+    Returns:
+        Path to spreadsheet.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+    """
+    clean_up_database()
+    add_unregistered_users(tag)
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT id FROM clans WHERE tag = %s", (tag))
+    clan_id = cursor.fetchone()["id"]
+
+    if active_only:
+        cursor.execute("SELECT id FROM clan_affiliations WHERE clan_id = %s AND role IS NOT NULL", (clan_id))
+    else:
+        cursor.execute("SELECT id FROM clan_affiliations WHERE clan_id = %s", (clan_id))
+
+    affiliation_id_list: List[int] = [user["id"] for user in cursor]
+    path = get_file_path(name)
+    workbook = xlsxwriter.Workbook(path)
+
+    # Users sheet
+    users_sheet = workbook.add_worksheet("Players")
+    users_headers = ["Player Name", "Player Tag", "Discord Name", "Clan Name", "Clan Tag",
+                     "Clan Role", "Strikes", "Kicks", "Join Date", "RoyaleAPI"]
+    users_sheet.write_row(0, 0, users_headers)
+
+    # Kicks sheet
+    kicks_sheet = workbook.add_worksheet("Kicks")
+    kicks_headers = ["Player Name", "Player Tag"]
+    kicks_sheet.write_row(0, 0, kicks_headers)
+
+    # Stats/Deck Usage sheets
+    cursor.execute("SELECT id, season_id, week, start_time FROM river_races WHERE clan_id = %s ORDER BY season_id DESC, week DESC",
+                   (clan_id))
+    query_result = [race for race in cursor.fetchmany(size=weeks)]
+    query_result.reverse()
+    river_race_list: List[Tuple[int, Worksheet, Worksheet]] = []
+
+    stats_headers = ["Player Name", "Player Tag", "Medals", "Decks Used", "Tracked Since",
+                     "Regular Wins", "Regular Losses", "Regular Win Rate",
+                     "Special Wins", "Special Losses", "Special Win Rate",
+                     "Duel Match Wins", "Duel Match Losses", "Duel Match Win Rate",
+                     "Duel Series Wins", "Duel Series Losses", "Duel Series Win Rate",
+                     "Boat Attack Wins", "Boat Attack Losses", "Boat Attack Win Rate",
+                     "Combined PvP Wins", "Combined PvP Losses", "Combined PvP Win Rate"]
+
+    for river_race in query_result:
+        stats_sheet_name = f"{river_race['season_id']}-{river_race['week']} Stats"
+        stats_sheet = workbook.add_worksheet(stats_sheet_name)
+        stats_sheet.write_row(0, 0, stats_headers)
+
+        history_sheet_name = f"{river_race['season_id']}-{river_race['week']} History"
+        history_sheet = workbook.add_worksheet(history_sheet_name)
+        history_headers = ["Player Name", "Player Tag"]
+        history_header_date = river_race["start_time"]
+
+        for _ in range(7):
+            history_headers.append(history_header_date.strftime("%a, %b %d"))
+            history_header_date += datetime.timedelta(days=1)
+
+        history_sheet.write_row(0, 0, history_headers)
+        river_race_list.append((river_race["id"], stats_sheet, history_sheet))
+
+    all_time_stats_sheet = workbook.add_worksheet("All Time")
+    all_time_stats_headers = ["Player Name", "Player Tag",
+                              "Regular Wins", "Regular Losses", "Regular Win Rate",
+                              "Special Wins", "Special Losses", "Special Win Rate",
+                              "Duel Match Wins", "Duel Match Losses", "Duel Match Win Rate",
+                              "Duel Series Wins", "Duel Series Losses", "Duel Series Win Rate",
+                              "Boat Attack Wins", "Boat Attack Losses", "Boat Attack Win Rate",
+                              "Combined PvP Wins", "Combined PvP Losses", "Combined PvP Win Rate"]
+    all_time_stats_sheet.write_row(0, 0, all_time_stats_headers)
+
+    # Write user data
+    for row, clan_affiliation_id in enumerate(affiliation_id_list, start=1):
+        cursor.execute("SELECT\
+                            users.name AS player_name,\
+                            users.tag AS player_tag,\
+                            clans.name AS clan_name,\
+                            clans.tag AS clan_tag,\
+                            discord_name,\
+                            role,\
+                            strikes,\
+                            first_joined\
+                        FROM users INNER JOIN clan_affiliations ON users.id = clan_affiliations.user_id\
+                        INNER JOIN clans ON clan_affiliations.clan_id = clans.id\
+                        WHERE clan_affiliations.id = %s",
+                       (clan_affiliation_id))
+        user_data = cursor.fetchone()
+
+        if user_data["role"]:
+            user_data["role"] = user_data["role"].capitalize()
+
+        kicks = get_kicks(user_data["player_tag"])
+
+        # Users sheet data
+        user_row = [user_data["player_name"], user_data["player_tag"], user_data["discord_name"], user_data["clan_name"],
+                    user_data["clan_tag"], user_data["role"], user_data["strikes"], len(kicks),
+                    user_data["first_joined"].strftime("%Y-%m-%d %H:%M"), clash_utils.royale_api_url(user_data["player_tag"])]
+        users_sheet.write_row(row, 0, user_row)
+
+        # Kicks sheet data
+        kicks_row = [user_data["player_name"], user_data["player_tag"]]
+        kicks_row.extend([kick.strftime("%Y-%m-%d") for kick in kicks])
+        kicks_sheet.write_row(row, 0, kicks_row)
+
+        # Stats/Deck Usage data
+        for river_race_id, stats_sheet, history_sheet in river_race_list:
+            cursor.execute("SELECT * FROM river_race_user_data WHERE clan_affiliation_id = %s AND river_race_id = %s",
+                           (clan_affiliation_id, river_race_id))
+            race_data = cursor.fetchone()
+            history_row = [user_data["player_name"], user_data["player_tag"]]
+            stats_row = [user_data["player_name"], user_data["player_tag"]]
+
+            if race_data is None:
+                history_row.extend(["-"] * 7)
+                stats_row.extend([None] * 21)
+            else:
+                # History
+                for key in ["day_1", "day_2", "day_3", "day_4", "day_5", "day_6", "day_7"]:
+                    usage = race_data[key]
+
+                    if usage is None:
+                        usage = "-"
+
+                    history_row.append(usage)
+
+                # Stats
+                if race_data["tracked_since"] is None:
+                    tracked_since = None
+                else:
+                    tracked_since = race_data["tracked_since"].strftime("%Y-%m-%d %H:%M")
+
+                stats_row.extend([race_data["medals"], 0, tracked_since])
+                pvp_wins = 0
+                pvp_losses = 0
+                decks_used = 0
+
+                for key in ["regular", "special", "duel"]:
+                    wins = race_data[f"{key}_wins"]
+                    losses = race_data[f"{key}_losses"]
+                    total = wins + losses
+                    decks_used += total
+                    pvp_wins += wins
+                    pvp_losses += losses
+                    win_rate = 0 if total == 0 else round(wins / total, 4)
+                    stats_row.extend([wins, losses, win_rate])
+
+                for key in ["series", "boat"]:
+                    wins = race_data[f"{key}_wins"]
+                    losses = race_data[f"{key}_losses"]
+                    total = wins + losses
+                    win_rate = 0 if total == 0 else round(wins / total, 4)
+                    stats_row.extend([wins, losses, win_rate])
+
+                    if key == "boat":
+                        decks_used += total
+
+                pvp_total = pvp_wins + pvp_losses
+                combined_win_rate = 0 if pvp_total == 0 else round(pvp_wins / pvp_total, 4)
+                stats_row.extend([pvp_wins, pvp_losses, combined_win_rate])
+                stats_row[3] = decks_used
+
+            history_sheet.write_row(row, 0, history_row)
+            stats_sheet.write_row(row, 0, stats_row)
+
+        # All time stats
+        cursor.execute("SELECT * FROM river_race_user_data WHERE clan_affiliation_id = %s", (clan_affiliation_id))
+        all_time_stats = [0] * 18
+
+        for race_data in cursor:
+            all_time_stats[0] += race_data["regular_wins"]
+            all_time_stats[1] += race_data["regular_losses"]
+            all_time_stats[3] += race_data["special_wins"]
+            all_time_stats[4] += race_data["special_losses"]
+            all_time_stats[6] += race_data["duel_wins"]
+            all_time_stats[7] += race_data["duel_losses"]
+            all_time_stats[9] += race_data["series_wins"]
+            all_time_stats[10] += race_data["series_losses"]
+            all_time_stats[12] += race_data["boat_wins"]
+            all_time_stats[13] += race_data["boat_losses"]
+
+        all_time_stats[15] = all_time_stats[0] + all_time_stats[3] + all_time_stats[6]  # PvP wins
+        all_time_stats[16] = all_time_stats[1] + all_time_stats[4] + all_time_stats[7]  # PvP losses
+
+        # Calculate win rates
+        for i in [2, 5, 8, 11, 14, 17]:
+            total = all_time_stats[i-2] + all_time_stats[i-1]
+            all_time_stats[i] = 0 if total == 0 else round(all_time_stats[i-2] / total, 4)
+
+        all_time_stats_row = [user_data["player_name"], user_data["player_tag"]] + all_time_stats
+        all_time_stats_sheet.write_row(row, 0, all_time_stats_row)
+
+    database.close()
+    workbook.close()
+    return path
+
+
+def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
+    """Export relevant data of members in the database.
+
+    Args:
+        primary_only: Whether to only include members in primary clans or all database users.
+        active_only: Whether to only include active members of the primary clans or anyone with an affiliation to one. Has no effect
+                     if primary_only is False.
+
+    Returns:
+        Path to spreadsheet.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+    """
+    clean_up_database()
+    primary_clans = get_primary_clans()
+
+    for clan in primary_clans:
+        add_unregistered_users(clan["tag"])
+
+    database, cursor = get_database_connection()
+
+    if primary_only:
+        if active_only:
+            cursor.execute("SELECT user_id AS id FROM clan_affiliations\
+                            WHERE clan_id IN (SELECT clan_id FROM primary_clans) AND role IS NOT NULL")
+        else:
+            cursor.execute("SELECT DISTINCT user_id AS id FROM clan_affiliations\
+                            WHERE clan_id IN (SELECT clan_id FROM primary_clans)")
+    else:
+        cursor.execute("SELECT id FROM users")
+
+    user_id_list: List[int] = [user["id"] for user in cursor]
+
+    if primary_only:
+        path = get_file_path("primary_clans")
+    else:
+        path = get_file_path("all_users")
+
+    workbook = xlsxwriter.Workbook(path)
+
+    # Users sheet
+    users_sheet = workbook.add_worksheet("Players")
+    users_headers = ["Player Name", "Player Tag", "Discord Name", "Clan Name", "Clan Tag",
+                     "Clan Role", "Strikes", "Kicks", "Join Date", "RoyaleAPI"]
+    users_sheet.write_row(0, 0, users_headers)
+
+    # Kicks sheet
+    kicks_sheet = workbook.add_worksheet("Kicks")
+    kicks_headers = ["Player Name", "Player Tag"]
+    kicks_sheet.write_row(0, 0, kicks_headers)
+
+    # Stats sheets
+    stats_sheets: List[Tuple[int, Worksheet]] = []
+    stats_headers = ["Player Name", "Player Tag",
+                     "Regular Wins", "Regular Losses", "Regular Win Rate",
+                     "Special Wins", "Special Losses", "Special Win Rate",
+                     "Duel Match Wins", "Duel Match Losses", "Duel Match Win Rate",
+                     "Duel Series Wins", "Duel Series Losses", "Duel Series Win Rate",
+                     "Boat Attack Wins", "Boat Attack Losses", "Boat Attack Win Rate",
+                     "Combined PvP Wins", "Combined PvP Losses", "Combined PvP Win Rate"]
+
+    for clan in primary_clans:
+        stats_sheet = workbook.add_worksheet(f"{clan['name']} Stats")
+        stats_sheet.write_row(0, 0, stats_headers)
+        stats_sheets.append((clan["id"], stats_sheet))
+
+    combined_stats_sheet = workbook.add_worksheet("Combined Stats")
+    combined_stats_sheet.write_row(0, 0, stats_headers)
+
+    # Write user data
+    for row, user_id in enumerate(user_id_list, start=1):
+        cursor.execute("SELECT name AS player_name, tag AS player_tag, discord_name, strikes FROM users WHERE id = %s", (user_id))
+        user_data = cursor.fetchone()
+
+        cursor.execute("SELECT name AS clan_name, tag AS clan_tag, role, first_joined FROM clan_affiliations\
+                        INNER JOIN clans ON clan_affiliations.clan_id = clans.id\
+                        WHERE clan_affiliations.user_id = %s AND role IS NOT NULL",
+                       (user_id))
+        query_result = cursor.fetchone()
+
+        if query_result is None:
+            user_data["clan_name"] = None
+            user_data["clan_tag"] = None
+            user_data["role"] = ""
+            user_data["first_joined"] = None
+        else:
+            user_data.update(query_result)
+            user_data["first_joined"] = user_data["first_joined"].strftime("%Y-%m-%d %H:%M")
+
+        kicks = get_kicks(user_data["player_tag"])
+
+        # Users sheet data
+        user_row = [user_data["player_name"], user_data["player_tag"], user_data["discord_name"], user_data["clan_name"],
+                    user_data["clan_tag"], user_data["role"].capitalize(), user_data["strikes"], len(kicks),
+                    user_data["first_joined"], clash_utils.royale_api_url(user_data["player_tag"])]
+        users_sheet.write_row(row, 0, user_row)
+
+        # Kicks sheet data
+        kicks_row = [user_data["player_name"], user_data["player_tag"]]
+        kicks_row.extend([kick.strftime("%Y-%m-%d") for kick in kicks])
+        kicks_sheet.write_row(row, 0, kicks_row)
+
+        # Stats sheets data
+        combined_stats = [0] * 18
+
+        for clan_id, sheet in stats_sheets:
+            stats = [0] * 18
+            cursor.execute("SELECT * FROM river_race_user_data\
+                            WHERE clan_affiliation_id = (SELECT id FROM clan_affiliations WHERE user_id = %s AND clan_id = %s)",
+                           (user_id, clan_id))
+
+            for race_data in cursor:
+                stats[0] += race_data["regular_wins"]
+                stats[1] += race_data["regular_losses"]
+                stats[3] += race_data["special_wins"]
+                stats[4] += race_data["special_losses"]
+                stats[6] += race_data["duel_wins"]
+                stats[7] += race_data["duel_losses"]
+                stats[9] += race_data["series_wins"]
+                stats[10] += race_data["series_losses"]
+                stats[12] += race_data["boat_wins"]
+                stats[13] += race_data["boat_losses"]
+
+            stats[15] = stats[0] + stats[3] + stats[6]  # PvP wins
+            stats[16] = stats[1] + stats[4] + stats[7]  # PvP losses
+
+            # Add non win-rate values to the combined stats. Every third index is a win rate so skip those.
+            for i in range(18):
+                if i % 3 != 2:
+                    combined_stats[i] += stats[i]
+
+            # Calculate win rates for performance in individual clan.
+            for i in [2, 5, 8, 11, 14, 17]:
+                total = stats[i-2] + stats[i-1]
+                stats[i] = 0 if total == 0 else round(stats[i-2] / total, 4)
+
+            stats_row = [user_data["player_name"], user_data["player_tag"]] + stats
+            sheet.write_row(row, 0, stats_row)
+
+        # Calculate win rates for performance across all primary clans.
+        for i in [2, 5, 8, 11, 14, 17]:
+            total = combined_stats[i-2] + combined_stats[i-1]
+            combined_stats[i] = 0 if total == 0 else round(combined_stats[i-2] / total, 4)
+
+        combined_stats_row = [user_data["player_name"], user_data["player_tag"]] + combined_stats
+        combined_stats_sheet.write_row(row, 0, combined_stats_row)
+
+    database.close()
+    workbook.close()
+    return path

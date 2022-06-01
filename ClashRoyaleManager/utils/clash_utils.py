@@ -47,6 +47,18 @@ def process_clash_royale_tag(input: str) -> Union[str, None]:
     return processed_tag
 
 
+def royale_api_url(tag: str) -> str:
+    """Get a link to a user's RoyaleAPI page.
+
+    Args:
+        tag: Tag of user to get link to.
+
+    Returns:
+        URL of RoyaleAPI page.
+    """
+    return f"https://royaleapi.com/player/{tag[1:]}"
+
+
 def battletime_to_datetime(battle_time: str) -> datetime.datetime:
     """Convert a time string provided by the API into a datetime object.
 
@@ -76,6 +88,20 @@ def is_first_day_of_season() -> bool:
     """
     current_time = datetime.datetime.utcnow()
     return current_time.month != (current_time - datetime.timedelta(days=7)).month
+
+
+def is_colosseum_week() -> bool:
+    """Check if it's currently a Colosseum week.
+
+    Note:
+        This does not work on Mondays between midnight and the daily reset time.
+
+    Returns:
+        Whether it's a Colosseum week.
+    """
+    now = datetime.datetime.utcnow()
+    monday = now - datetime.timedelta(days=now.weekday())
+    return monday.month != (monday + datetime.timedelta(days=7)).month
 
 
 def get_total_cards() -> int:
@@ -230,7 +256,7 @@ def get_current_river_race_info(tag: str) -> RiverRaceInfo:
         "tag": race_info["clan"]["tag"],
         "name": race_info["clan"]["name"],
         "start_time": last_race_end_time,
-        "colosseum_week": race_info["periodType"].lower() == "colosseum",
+        "colosseum_week": is_colosseum_week(),
         "completed_saturday": (race_info["periodIndex"] % 7 == 6
                                 and race_info["clan"]["fame"] >= 10000
                                 and race_info["periodType"].lower() != "colosseum"),

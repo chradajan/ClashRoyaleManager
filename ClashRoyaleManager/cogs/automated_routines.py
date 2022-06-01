@@ -315,9 +315,13 @@ class AutomatedRoutines(commands.Cog):
                                 )
 
                             if field_count < 25:
-                                embed_one.add_field(name=user_data["name"], value=strike_field, inline=False)
+                                embed_one.add_field(name=discord.utils.escape_markdown(user_data["name"]),
+                                                    value=strike_field,
+                                                    inline=False)
                             else:
-                                embed_two.add_field(name=user_data["name"], value=strike_field, inline=False)
+                                embed_two.add_field(name=discord.utils.escape_markdown(user_data["name"]),
+                                                    value=strike_field,
+                                                    inline=False)
 
                             field_count += 1
                         else:
