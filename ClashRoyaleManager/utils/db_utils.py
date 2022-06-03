@@ -26,6 +26,7 @@ from utils.custom_types import (
     ClanRole,
     ClanStrikeInfo,
     ClashData,
+    DatabaseReport,
     DatabaseRiverRaceClan,
     PrimaryClan,
     ReminderTime,
@@ -376,7 +377,7 @@ def get_clans_in_database() -> Dict[str, str]:
     return tags
 
 
-def get_user_in_database(search_key: Union[int, str]) -> List[Tuple[str, str, str]]:
+def get_user_in_database(search_key: Union[int, str]) -> List[Tuple[str, str, Union[str, None]]]:
     """Find a user(s) in the database corresponding to the search key.
 
     First try searching for a user where discord_id == search_key if key is an int, otherwise where player_tag == search_key. If no
@@ -624,6 +625,39 @@ def get_clan_name(tag: str) -> Union[str, None]:
     return query_result["name"]
 
 
+def get_player_report_data(tag: str) -> DatabaseReport:
+    """Get data relevant to a player report from the database.
+
+    Args:
+        tag: Tag of user to get data of.
+
+    Returns:
+        Relevant data of user from database.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_name, strikes FROM users WHERE tag = %s", (tag))
+    query_result = cursor.fetchone()
+    database.close()
+
+    if query_result is None:
+        return {
+            "discord_name": "",
+            "strikes": 0,
+            "kicks": 0,
+            "last_kicked": None
+        }
+
+    kicks = get_kicks(tag)
+    last_kick = kicks[-1] if kicks else None
+
+    return {
+        "discord_name": query_result["discord_name"],
+        "strikes": query_result["strikes"],
+        "kicks": len(kicks),
+        "last_kicked": last_kick
+    }
+
+
 ############################################################################
 #  __     __         _       _     _             _____     _     _         #
 #  \ \   / /_ _ _ __(_) __ _| |__ | | ___  ___  |_   _|_ _| |__ | | ___    #
@@ -830,7 +864,11 @@ def is_battle_time(tag: str) -> bool:
     cursor.execute("SELECT battle_time FROM river_races WHERE id = %s", (river_race_id))
     query_result = cursor.fetchone()
     database.close()
-    return query_result["colosseum_week"]
+
+    if query_result is None:
+        return False
+
+    return query_result["battle_time"]
 
 
 def is_colosseum_week(tag: str) -> bool:
@@ -1176,6 +1214,74 @@ def prepare_for_river_race(tag: str, force: bool=False):
 
     database.commit()
     database.close()
+
+
+def get_stats(player_tag: str, clan_tag: Optional[str]=None) -> BattleStats:
+    """Get a user's all time Battle Day stats.
+
+    Args:
+        player_tag: Tag of user to get stats of.
+        clan_tag: Get stats of user while in this clan. If None, then get combined stats.
+
+    Returns:
+        All time stats dictionary.
+    """
+    database, cursor = get_database_connection()
+    stats: BattleStats = {
+        "player_tag": player_tag,
+        "clan_tag": clan_tag,
+        "regular_wins": 0,
+        "regular_losses": 0,
+        "special_wins": 0,
+        "special_losses": 0,
+        "duel_wins": 0,
+        "duel_losses": 0,
+        "series_wins": 0,
+        "series_losses": 0,
+        "boat_wins": 0,
+        "boat_losses": 0
+    }
+    cursor.execute("SELECT id FROM users WHERE tag = %s", (player_tag))
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        database.close()
+        return stats
+
+    user_id = query_result["id"]
+
+    if clan_tag is None:
+        cursor.execute("SELECT * FROM river_race_user_data\
+                        WHERE clan_affiliation_id IN (SELECT id FROM clan_affiliations WHERE user_id = %s)",
+                       (user_id))
+    else:
+        cursor.execute("SELECT id FROM clans WHERE tag = %s", (clan_tag))
+        query_result = cursor.fetchone()
+
+        if query_result is None:
+            database.close()
+            return stats
+
+        clan_id = query_result["id"]
+        cursor.execute("SELECT * FROM river_race_user_data\
+                        WHERE clan_affiliation_id = (SELECT id FROM clan_affiliations WHERE user_id = %s AND clan_id = %s)",
+                       (user_id, clan_id))
+
+    database.close()
+
+    for race_data in cursor:
+        stats["regular_wins"] += race_data["regular_wins"]
+        stats["regular_losses"] += race_data["regular_losses"]
+        stats["special_wins"] += race_data["special_wins"]
+        stats["special_losses"] += race_data["special_losses"]
+        stats["duel_wins"] += race_data["duel_wins"]
+        stats["duel_losses"] += race_data["duel_losses"]
+        stats["series_wins"] += race_data["series_wins"]
+        stats["series_losses"] += race_data["series_losses"]
+        stats["boat_wins"] += race_data["boat_wins"]
+        stats["boat_losses"] += race_data["boat_losses"]
+
+    return stats
 
 
 ########################################

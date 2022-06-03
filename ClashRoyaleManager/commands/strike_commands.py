@@ -1,16 +1,11 @@
 """Commands to give, remove, and check strikes."""
 
-from typing import Union
-
 import discord
 from discord import app_commands
-from discord.ext import commands
 
 import utils.db_utils as db_utils
 import utils.discord_utils as discord_utils
 from log.logger import LOG
-from utils.channel_manager import CHANNEL
-from utils.custom_types import SpecialChannel
 
 
 @app_commands.command()

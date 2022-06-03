@@ -1,8 +1,9 @@
 """Various utility functions for Discord related needs."""
 
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import discord
+from prettytable import PrettyTable
 
 import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
@@ -220,6 +221,18 @@ def user_not_found_embed(name: str) -> discord.Embed:
     return embed
 
 
+def issuer_not_registered_embed() -> discord.Embed:
+    """Create an embed for when a member illegally issues a command before registering.
+
+    Returns:
+        Embed explaining the problem.
+    """
+    embed = discord.Embed(title="You are not registered",
+                          description="You must use the `/register` command before trying to issue other commands.",
+                          color=discord.Color.red())
+    return embed
+
+
 def get_member_from_mention(interaction: discord.Interaction, mention: str) -> Union[discord.Member, None]:
     """Get a Discord member from their mention string.
     
@@ -276,4 +289,168 @@ async def update_strikes_helper(search_key: Union[int, str], name: str, delta: i
             message = f"{member.mention}"
 
     await CHANNEL[SpecialChannel.Strikes].send(content=message, embed=embed)
+    return embed
+
+
+def get_player_report(tag: str, card_levels: bool) -> discord.Embed:
+    """Get an embed with information about a player.
+
+    Args:
+        tag: Tag of user to get report of.
+        card_levels: Whether to include card levels.
+
+    Returns:
+        Embed containing player report.
+
+    Raises:
+        GeneralAPIError: Unable to get data of user.
+    """
+    clash_data = clash_utils.get_clash_royale_user_data(tag)
+    database_data = db_utils.get_player_report_data(tag)
+
+    table = PrettyTable()
+    table.add_row(["Username", clash_data["name"]])
+    table.add_row(["Tag", clash_data["tag"]])
+
+    if database_data["discord_name"] is None:
+        database_data["discord_name"] = "N/A"
+
+    table.add_row(["Discord Name", database_data["discord_name"]])
+    table.add_row(["Strikes", database_data["strikes"]])
+    table.add_row(["Kicks", database_data["kicks"]])
+
+    if database_data["last_kicked"] is None:
+        last_kicked = "Never"
+    else:
+        last_kicked = database_data["last_kicked"].strftime("%Y-%m-%d")
+
+    table.add_row(["Last Kicked", last_kicked])
+
+    if clash_data["clan_name"] is None:
+        clash_data["clan_name"] = "N/A"
+        clash_data["clan_tag"] = "N/A"
+        clash_data["role"] = "N/A"
+    else:
+        clash_data["role"] = clash_data["role"].name
+
+    table.add_row(["Clan", clash_data["clan_name"]])
+    table.add_row(["Clan Tag", clash_data["clan_tag"]])
+    table.add_row(["Clan Role", clash_data["role"]])
+
+    embed = discord.Embed(title=f"{discord.utils.escape_markdown(clash_data['name'])} Report",
+                          url=clash_utils.royale_api_url(tag),
+                          description=f"```\n{table.get_string(header=False)}```")
+
+    if card_levels:
+        embed.add_field(name="Stats",
+                        value=("```"
+                               f"Level: {clash_data['exp_level']}\n"
+                               f"Trophies: {clash_data['trophies']}\n"
+                               f"Best Trophies: {clash_data['best_trophies']}\n"
+                               f"Cards Owned: {clash_data['found_cards']}/{clash_data['total_cards']}"
+                               "```"),
+                        inline=False)
+
+        found_cards = clash_data["found_cards"]
+        card_level_string = ""
+        percentile = 0
+
+        for i in range(14, 0, -1):
+            percentile += clash_data["cards"][i] / found_cards
+            percentage = round(percentile * 100)
+
+            if 0 < percentage < 5:
+                card_level_string += f"{i:02d}: {'▪':<20}  {percentage:02d}%\n"
+            else:
+                card_level_string += f"{i:02d}: {(percentage // 5) * '■':<20}  {percentage:02d}%\n"
+
+            if percentage == 100:
+                break
+
+        embed.add_field(name="Card Levels", value=f"```{card_level_string}```", inline=False)
+
+    return embed
+
+
+def get_stats_report(player_tag: str,
+                     player_name: str,
+                     clan_tag: Optional[str]=None,
+                     clan_name: Optional[str]=None) -> discord.Embed:
+    """Create an embed displaying a user's stats.
+
+    Args:
+        player_tag: Tag of user to get stats of.
+        player_name: Name of user to get stats of.
+        clan_tag: Get stats of user in this clan. If None, get stats from all clans.
+        clan_name: Name of clan to get stats in.
+
+    Returns:
+        Embed of stats.
+    """
+    stats = db_utils.get_stats(player_tag, clan_tag)
+    clan_name = discord.utils.escape_markdown(clan_name) if clan_name is not None else "all clans"
+    title = f"{discord.utils.escape_markdown(player_name)}'s stats in {clan_name}"
+    embed = discord.Embed(title=title, color=discord.Color.random())
+    combined_wins = 0
+    combined_losses = 0
+
+    # Regular matches
+    wins = stats["regular_wins"]
+    losses = stats["regular_losses"]
+    combined_wins += wins
+    combined_losses += losses
+    total = wins + losses
+    win_rate = "0.00%" if total == 0 else f"{wins / total:.2%}"
+    embed.add_field(name="Regular PvP",
+                    value=f"```Wins   {wins}\nLosses {losses}\nTotal:  {total}\nWin Rate: {win_rate}```")
+
+    # Special matches
+    wins = stats["special_wins"]
+    losses = stats["special_losses"]
+    combined_wins += wins
+    combined_losses += losses
+    total = wins + losses
+    win_rate = "0.00%" if total == 0 else f"{wins / total:.2%}"
+    embed.add_field(name="Special PvP",
+                    value=f"```Wins   {wins}\nLosses {losses}\nTotal:  {total}\nWin Rate: {win_rate}```")
+
+    # Divider
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
+
+    # Duel matches
+    wins = stats["duel_wins"]
+    losses = stats["duel_losses"]
+    combined_wins += wins
+    combined_losses += losses
+    total = wins + losses
+    win_rate = "0.00%" if total == 0 else f"{wins / total:.2%}"
+    embed.add_field(name="Duel (matches)",
+                    value=f"```Wins   {wins}\nLosses {losses}\nTotal:  {total}\nWin Rate: {win_rate}```")
+
+    # Duel series
+    wins = stats["series_wins"]
+    losses = stats["series_losses"]
+    total = wins + losses
+    win_rate = "0.00%" if total == 0 else f"{wins / total:.2%}"
+    embed.add_field(name="Duel (series)",
+                    value=f"```Wins   {wins}\nLosses {losses}\nTotal:  {total}\nWin Rate: {win_rate}```")
+
+    # Divider
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
+
+    # Combined matches
+    total = combined_wins + combined_losses
+    win_rate = "0.00%" if total == 0 else f"{combined_wins / total:.2%}"
+    embed.add_field(name="Combined PvP",
+                    value=f"```Wins   {combined_wins}\nLosses {combined_losses}\nTotal:  {total}\nWin Rate: {win_rate}```",
+                    inline=False)
+
+    # Boat attacks
+    wins = stats["boat_wins"]
+    losses = stats["boat_losses"]
+    total = wins + losses
+    win_rate = "0.00%" if total == 0 else f"{wins / total:.2%}"
+    embed.add_field(name="Boat Attacks",
+                    value=f"```Wins   {wins}\nLosses {losses}\nTotal:  {total}\nWin Rate: {win_rate}```")
+
     return embed

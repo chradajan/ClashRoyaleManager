@@ -3,6 +3,7 @@
 import discord
 from discord import app_commands
 
+import utils.db_utils as db_utils
 import utils.discord_utils as discord_utils
 from log.logger import LOG
 from utils.exceptions import GeneralAPIError
@@ -47,7 +48,43 @@ async def remove_strike_context_menu(interaction: discord.Interaction, member: d
     LOG.command_end()
 
 
+@app_commands.context_menu(name="Player Report")
+async def player_report_context_menu(interaction: discord.Interaction, member: discord.Member):
+    """Get more information about a user."""
+    LOG.command_start(interaction, target=member)
+    search_results = db_utils.get_user_in_database(member.id)
+
+    if not search_results:
+        embed = discord_utils.user_not_found_embed(member.display_name)
+    else:
+        tag, _, _ = search_results[0]
+        embed = discord_utils.get_player_report(tag, False)
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    LOG.command_end()
+
+
+@app_commands.context_menu(name="Stats Report")
+async def stats_report_context_menu(interaction: discord.Interaction, member: discord.Member):
+    """Get a user's Battle Day stats."""
+    LOG.command_start(interaction, target=member)
+    search_results = db_utils.get_user_in_database(member.id)
+
+    if not search_results:
+        embed = discord_utils.user_not_found_embed(member.display_name)
+    else:
+        player_tag, player_name, _ = search_results[0]
+        embed = discord_utils.get_stats_report(player_tag, player_name)
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    LOG.command_end()
+
+
 @update_context_menu.error
+@give_strike_context_menu.error
+@remove_strike_context_menu.error
+@player_report_context_menu.error
+@stats_report_context_menu.error
 async def context_menus_error_hander(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """Error handler for setup commands."""
     if isinstance(error, GeneralAPIError):
@@ -68,5 +105,7 @@ CONTEXT_MENUS = [
     update_context_menu,
     give_strike_context_menu,
     remove_strike_context_menu,
+    player_report_context_menu,
+    stats_report_context_menu,
 ]
 """Context menu commands."""

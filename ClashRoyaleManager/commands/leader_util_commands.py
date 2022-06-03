@@ -63,6 +63,7 @@ async def export(interaction: discord.Interaction,
 
 
 @send_reminder.error
+@export.error
 async def leader_util_commands_error_handler(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """Error handler for leader util commands."""
     if isinstance(error, GeneralAPIError):
@@ -72,6 +73,7 @@ async def leader_util_commands_error_handler(interaction: discord.Interaction, e
     else:
         embed = discord.Embed(title="An unexpected error has occurred.", color=discord.Color.red())
         LOG.exception(error)
+
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

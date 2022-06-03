@@ -176,3 +176,11 @@ class ClanStrikeInfo(TypedDict):
     completed_saturday: bool
     reset_times: List[datetime.datetime]
     users: Dict[PlayerTag, UserStrikeInfo]
+
+
+class DatabaseReport(TypedDict):
+    """Dictionary containing player report data retrieved from database."""
+    discord_name: str
+    strikes: int
+    kicks: int
+    last_kicked: Union[datetime.datetime, None]

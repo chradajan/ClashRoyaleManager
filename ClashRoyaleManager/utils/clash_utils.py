@@ -3,7 +3,7 @@
 import datetime
 import re
 import requests
-from typing import Dict, List, Union
+from typing import Dict, List, Tuple, Union
 
 import utils.db_utils as db_utils
 from config.credentials import CLASH_API_KEY
@@ -748,3 +748,34 @@ def get_battle_day_stats(player_tag: str,
                     stats["duel_wins"] += 1
 
     return stats
+
+
+def medals_report(tag: str, threshold: int) -> List[Tuple[str, int]]:
+    """Get a list of users in a clan below the specified medals threshold.
+
+    Args:
+        tag: Tag of clan to get report for.
+        threshold: Get a list of members in the clan with fewer medals than this.
+
+    Returns:
+        List of users's names and medals below the threshold, ordered from lowest to highest.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    LOG.info(log_message("Getting medals report", tag=tag, threshold=threshold))
+    active_members = get_active_members_in_clan(tag)
+    members = []
+
+    if db_utils.is_battle_time(tag):
+        participants = get_river_race_participants(tag)
+    else:
+        participants = get_prior_river_race_participants(tag)
+
+    for participant in participants:
+        if participant["medals"] < threshold and participant["tag"] in active_members:
+            members.append((active_members[participant["tag"]]["name"], participant["medals"]))
+
+    members.sort(key=lambda x: (x[1], x[0].lower()))
+    return members
