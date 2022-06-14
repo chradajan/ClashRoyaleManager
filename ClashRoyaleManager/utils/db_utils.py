@@ -925,7 +925,7 @@ def prepare_for_battle_days(tag: str):
     Args:
         tag: Tag of clan to prepare for.
     """
-    river_race_id, clan_id, season_id, _ = get_clan_river_race_ids(tag)
+    river_race_id, clan_id, _, _ = get_clan_river_race_ids(tag)
     current_time = set_last_check(tag)
     set_battle_time(tag)
     add_unregistered_users(tag)
@@ -936,14 +936,38 @@ def prepare_for_battle_days(tag: str):
                    (current_time, river_race_id, clan_id))
 
     try:
-        clans_in_race = clash_utils.get_clans_in_race(tag, False)
+        update_river_race_clans(tag)
+    except GeneralAPIError:
+        LOG.warning(f"Unable to get clans during battle day preparations for clan {tag}")
 
-        for clan_tag, clan in clans_in_race.items():
+    database.commit()
+    database.close()
+
+
+def update_river_race_clans(tag: str):
+    """Insert/update clans used for predictions for a primary clan. If they already exist for the current season, don't do anything.
+
+    Args:
+        tag: Tag of clan to insert River Race clans for.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+    """
+    _, clan_id, season_id, _ = get_clan_river_race_ids(tag)
+    database, cursor = get_database_connection()
+    clans_in_race = clash_utils.get_clans_in_race(tag, False)
+    cursor.execute("SELECT id FROM river_race_clans WHERE clan_id = %s AND season_id = %s", (clan_id, season_id))
+    insert_new_clans = not bool(cursor.fetchall())
+
+    for clan_tag, clan in clans_in_race.items():
+        if insert_new_clans:
+            cursor.execute("INSERT INTO river_race_clans (clan_id, season_id, tag, name, current_race_total_decks) VALUES\
+                            (%s, %s, %s, %s, %s)",
+                           (clan_id, season_id, clan_tag, clan["name"], clan["total_decks_used"]))
+        else:
             cursor.execute("UPDATE river_race_clans SET current_race_medals = 0, current_race_total_decks = %s\
                             WHERE clan_id = %s AND season_id = %s AND tag = %s",
                            (clan["total_decks_used"], clan_id, season_id, clan_tag))
-    except GeneralAPIError:
-        LOG.warning(f"Unable to get clans during battle day preparations for clan {tag}")
 
     database.commit()
     database.close()
@@ -1175,12 +1199,11 @@ def create_new_season():
     database.close()
 
 
-def prepare_for_river_race(tag: str, force: bool=False):
+def prepare_for_river_race(tag: str):
     """Insert a new river_race entry for the specified clan, along with a new set of five river_race_clans entries.
 
     Args:
         tag: Tag of clan to create entries for.
-        force: Insert new River Race clans regardless of time. Used for first time database setup.
     """
     database, cursor = get_database_connection()
     cursor.execute("SELECT id FROM clans WHERE tag = %s", (tag))
@@ -1190,6 +1213,11 @@ def prepare_for_river_race(tag: str, force: bool=False):
 
     try:
         river_race_info = clash_utils.get_current_river_race_info(tag)
+
+        if clash_utils.is_first_day_of_season():
+            river_race_info["week"] = 1
+            river_race_info["colosseum_week"] = False
+            river_race_info["completed_saturday"] = False
     except GeneralAPIError:
         LOG.warning(f"Unable to get current river race info for {tag}. Creating placeholder River Race entry.")
         river_race_info = {
@@ -1206,11 +1234,6 @@ def prepare_for_river_race(tag: str, force: bool=False):
     cursor.execute("INSERT INTO river_races (clan_id, season_id, week, start_time, colosseum_week, completed_saturday)\
                     VALUES (%(clan_id)s, %(season_id)s, %(week)s, %(start_time)s, %(colosseum_week)s, %(completed_saturday)s)",
                    river_race_info)
-
-    if clash_utils.is_first_day_of_season() or force:
-        for clan_tag, clan_name in river_race_info["clans"]:
-            cursor.execute("INSERT INTO river_race_clans (clan_id, season_id, tag, name) VALUES (%s, %s, %s, %s)",
-                            (clan_id, season_id, clan_tag, clan_name))
 
     database.commit()
     database.close()
