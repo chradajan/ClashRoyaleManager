@@ -529,7 +529,7 @@ def create_prediction_embed(tag: str, predicted_outcomes: List[PredictedOutcome]
             description += (f"{primary_name} can surpass the predicted score of first place by using all "
                             f"{primary_predicted_outcome['remaining_decks']} remaining decks at any win rate.")
         else:
-            description += (f"{primary_name} can reach the predicted score of first place by using all"
+            description += (f"{primary_name} can reach the predicted score of first place by using all "
                             f"{primary_predicted_outcome['remaining_decks']} decks at a "
                             f"{round(all_remaining_catchup * 100, 2)}% win rate.")
     elif primary_placement != 1:

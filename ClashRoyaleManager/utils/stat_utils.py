@@ -362,8 +362,16 @@ def predict_race_outcome(tag: str, historical_win_rates: bool, historical_deck_u
     for predicted_outcome in predicted_outcomes[1:]:
         clan_tag = predicted_outcome["tag"]
         medals_to_reach_first = winning_score - predicted_outcome["current_score"]
-        expected_usage_avg_medals_needed = expected_deck_usage[clan_tag] / medals_to_reach_first
-        all_usage_avg_medals_needed = predicted_outcome["remaining_decks"] / medals_to_reach_first
+
+        if expected_deck_usage[clan_tag] == 0:
+            expected_usage_avg_medals_needed = 1000
+        else:
+            expected_usage_avg_medals_needed = medals_to_reach_first / expected_deck_usage[clan_tag]
+
+        if predicted_outcome["remaining_decks"] == 0:
+            all_usage_avg_medals_needed = 1000
+        else:
+            all_usage_avg_medals_needed = medals_to_reach_first / predicted_outcome["remaining_decks"]
 
         if expected_usage_avg_medals_needed < 100:
             predicted_outcome["expected_decks_catchup_win_rate"] = -1
