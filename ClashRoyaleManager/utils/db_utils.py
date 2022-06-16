@@ -355,6 +355,19 @@ def clean_up_database():
     LOG.info("Database clean up complete")
 
 
+def set_reminder_time(discord_id: int, reminder_time: ReminderTime):
+    """Update a user's reminder time.
+
+    Args:
+        discord_id: Discord ID of user to update.
+        reminder_time: New preferred time to receive reminders.
+    """
+    database, cursor = get_database_connection()
+    affected_rows = cursor.execute("UPDATE users SET reminder_time = %s WHERE discord_id = %s", (reminder_time.value, discord_id))
+    database.commit()
+    database.close()
+
+
 ###################################################
 #    ____                      _                  #
 #   / ___|  ___  __ _ _ __ ___| |__   ___  ___    #

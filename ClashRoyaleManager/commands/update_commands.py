@@ -7,7 +7,7 @@ import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 import utils.discord_utils as discord_utils
 from log.logger import LOG
-from utils.custom_types import SpecialRole
+from utils.custom_types import ReminderTime, SpecialRole
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 from utils.role_manager import ROLE
 
@@ -160,12 +160,33 @@ async def unregister_all_members(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed)
 
 
+@app_commands.command()
+@app_commands.describe(reminder_time="When you would prefer to be pinged. EU = 19:00 UTC, US = 02:00 UTC")
+@app_commands.choices(reminder_time=[
+    app_commands.Choice(name="US", value="US"),
+    app_commands.Choice(name="EU", value="EU")
+])
+async def set_reminder_time(interaction: discord.Interaction, reminder_time: app_commands.Choice[str]):
+    """Change when you get pinged for Battle Day reminders."""
+    LOG.command_start(interaction, reminder_time=reminder_time)
+    reminder_time = ReminderTime(reminder_time.value)
+    success = db_utils.set_reminder_time(interaction.user.id, reminder_time)
+
+    embed = discord.Embed(title="Update successful!",
+                            description=f"You will now get pinged for automated {reminder_time.value} reminders.",
+                            color=discord.Color.green())
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    LOG.command_end()
+
+
 @register.error
 @update.error
 @update_member.error
 @update_all_members.error
 @unregister_member.error
 @unregister_all_members.error
+@set_reminder_time.error
 async def update_commands_error_handler(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """Error handler for update commands."""
     if isinstance(error, GeneralAPIError):
@@ -189,5 +210,6 @@ UPDATE_COMMANDS = [
     update_all_members,
     unregister_member,
     unregister_all_members,
+    set_reminder_time,
 ]
 """Commands to be added by member_commands module."""
