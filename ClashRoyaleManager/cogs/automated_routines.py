@@ -193,7 +193,7 @@ class AutomatedRoutines(commands.Cog):
                 embed = discord.Embed(title="This is an automated reminder",
                                       description=("Any Discord users that have their reminder time preference set to `US` were "
                                                    "pinged. If you were pinged but would like to to be mentioned in the earlier "
-                                                   "reminder, use the `/set_reminders` command and choose `EU`."))
+                                                   "reminder, use the `/set_reminder_time` command and choose `EU`."))
                 await CHANNEL[SpecialChannel.Reminders].send(embed=embed)
 
             LOG.automation_end()
@@ -216,7 +216,7 @@ class AutomatedRoutines(commands.Cog):
                 embed = discord.Embed(title="This is an automated reminder",
                                     description=("Any Discord users that have their reminder time preference set to `EU` were "
                                                  "pinged. If you were pinged but would like to to be mentioned in the later "
-                                                 "reminder, use the `/set_reminders` command and choose `US`."))
+                                                 "reminder, use the `/set_reminder_time` command and choose `US`."))
                 await CHANNEL[SpecialChannel.Reminders].send(embed=embed)
 
             LOG.automation_end()
