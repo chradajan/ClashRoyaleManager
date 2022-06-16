@@ -20,19 +20,23 @@ PRIMARY_CLANS = db_utils.get_primary_clans_enum()
 async def send_reminder(interaction: discord.Interaction, clan: PRIMARY_CLANS):
     """Send a reminder to members of a clan that have not used all their decks today."""
     LOG.command_start(interaction, clan=clan)
+    ephemeral = False
 
     try:
-        await discord_utils.send_reminder(clan.value, ReminderTime.ALL, False)
+        await discord_utils.send_reminder(clan.value, ReminderTime.ALL)
         embed = discord.Embed(title="Reminder sent",
-                          description=(f"Reminder for members of {discord.utils.escape_markdown(clan.name)} sent to "
-                                       f"#{discord.utils.escape_markdown(CHANNEL[SpecialChannel.Reminders])}"),
-                          color=discord.Color.green())
+                              description=(f"Reminder for members of {discord.utils.escape_markdown(clan.name)} sent to "
+                                           f"#{discord.utils.escape_markdown(CHANNEL[SpecialChannel.Reminders].name)}"),
+                              color=discord.Color.green())
+
+        if interaction.channel == CHANNEL[SpecialChannel.Reminders]:
+            ephemeral = True
     except GeneralAPIError:
         embed = discord.Embed(title="Reminder failed to send",
                               description="The Clash Royale API is currently inaccessible.",
                               color=discord.Color.red())
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
     LOG.command_end()
 
 

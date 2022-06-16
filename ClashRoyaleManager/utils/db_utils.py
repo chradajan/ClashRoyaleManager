@@ -610,9 +610,9 @@ def get_user_reminder_times(reminder_time: ReminderTime) -> Dict[str, int]:
     database, cursor = get_database_connection()
 
     if reminder_time == ReminderTime.ALL:
-        cursor.execute("SELECT tag, discord_id FROM users WHERE discord_id IS NOT NULL")
+        cursor.execute("SELECT tag, discord_id FROM users")
     else:
-        cursor.execute("SELECT tag, discord_id FROM users WHERE discord_id IS NOT NULL AND reminder_time = %s", reminder_time.value)
+        cursor.execute("SELECT tag, discord_id FROM users WHERE reminder_time = %s", reminder_time.value)
 
     database.close()
     return {user["tag"]: user["discord_id"] for user in cursor}

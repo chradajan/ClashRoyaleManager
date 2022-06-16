@@ -160,27 +160,42 @@ async def send_reminder(tag: str, reminder_time: ReminderTime):
     current_header = headers[0]
 
     for player_tag, player_name, decks_remaining in decks_report["active_members_with_remaining_decks"]:
+        if player_tag not in preferred_reminder_times:
+            continue
+
         if current_header != headers[decks_remaining]:
             current_header = headers[decks_remaining]
             users_to_remind += "\n" + current_header + "\n"
 
-        member = None
+        discord_id = preferred_reminder_times[player_tag]
 
-        if player_tag in preferred_reminder_times:
+        if discord_id is not None:
             member = discord.utils.get(channel.members, id=preferred_reminder_times[player_tag])
+        else:
+            member = None
 
         if member is None:
             users_to_remind += f"{discord.utils.escape_markdown(player_name)}\n"
         else:
             users_to_remind += f"{member.mention}\n"
 
+    embed = None
+
     if users_to_remind:
+        users_to_remind += "\n"
         message = f"**The following members of {discord.utils.escape_markdown(clan_name)} still have decks left to use today:**\n"
         message += users_to_remind
     else:
-        message = f"**All members of {discord.utils.escape_markdown(clan_name)} have already used all their decks today.**"
+        if reminder_time == ReminderTime.ALL:
+            message = f"All members of {discord.utils.escape_markdown(clan_name)} have already used all their decks today."
+        else:
+            message = (f"All members of {discord.utils.escape_markdown(clan_name)} that receive {reminder_time.value} reminders "
+                       "have already used all their decks today.")
 
-    await channel.send(message)
+        embed = discord.Embed(title=message, color=discord.Color.green())
+        message = None
+
+    await channel.send(content=message, embed=embed)
 
 
 def duplicate_names_embed(users: List[Tuple[str, str, str]]) -> discord.Embed:
