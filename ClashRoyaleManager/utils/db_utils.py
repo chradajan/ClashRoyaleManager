@@ -961,10 +961,18 @@ def update_river_race_clans(tag: str):
 
     for clan_tag, clan in clans_in_race.items():
         if insert_new_clans:
+            LOG.info(log_message("Inserting River Race clan",
+                                 clan_id=clan_id,
+                                 season_id=season_id,
+                                 clan_tag=clan_tag))
             cursor.execute("INSERT INTO river_race_clans (clan_id, season_id, tag, name, current_race_total_decks) VALUES\
                             (%s, %s, %s, %s, %s)",
                            (clan_id, season_id, clan_tag, clan["name"], clan["total_decks_used"]))
         else:
+            LOG.info(log_message("Updating River Race clan",
+                                 clan_id=clan_id,
+                                 season_id=season_id,
+                                 clan_tag=clan_tag))
             cursor.execute("UPDATE river_race_clans SET current_race_medals = 0, current_race_total_decks = %s\
                             WHERE clan_id = %s AND season_id = %s AND tag = %s",
                            (clan["total_decks_used"], clan_id, season_id, clan_tag))

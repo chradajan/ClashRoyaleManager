@@ -15,7 +15,8 @@ from utils.custom_types import (
     DecksReport,
     Participant,
     RiverRaceClan,
-    RiverRaceInfo
+    RiverRaceInfo,
+    RiverRaceStatus
 )
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
@@ -779,3 +780,43 @@ def medals_report(tag: str, threshold: int) -> List[Tuple[str, int]]:
 
     members.sort(key=lambda x: (x[1], x[0].lower()))
     return members
+
+
+def river_race_status(tag: str) -> List[RiverRaceStatus]:
+    """Get number of decks still available today to each clan in a River Race.
+
+    Args:
+        tag: Tag of clan to check River Race status of.
+
+    Returns:
+        List of statuses order from lowest total remaining decks to highest.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag was provided.
+    """
+    LOG.info(f"Getting River Race status for {tag}")
+    race_info = get_current_river_race_info(tag)
+    river_race_status: List[RiverRaceStatus] = []
+
+    for clan_tag, name in race_info["clans"]:
+        decks_report = get_decks_report(clan_tag)
+        total_remaining_decks = decks_report["remaining_decks"]
+        active_remaining_decks = 0
+
+        for _, _, decks_remaining in decks_report["active_members_with_remaining_decks"]:
+            active_remaining_decks += decks_remaining
+
+        active_remaining_decks = min(active_remaining_decks, total_remaining_decks)
+
+        river_race_status.append(
+            {
+                "tag": clan_tag,
+                "name": name,
+                "total_remaining_decks": total_remaining_decks,
+                "active_remaining_decks": active_remaining_decks
+            }
+        )
+
+    river_race_status.sort(key=lambda x: (x["total_remaining_decks"], x["active_remaining_decks"]))
+    return river_race_status

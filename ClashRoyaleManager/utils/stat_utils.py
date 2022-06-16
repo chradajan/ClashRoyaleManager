@@ -1,12 +1,13 @@
 """Various utilities for tracking and analyzing Battle Day statistics."""
 
 import datetime
-from typing import List, Tuple, Union
+import numpy
+from typing import Dict, List, Tuple, Union
 
 import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from log.logger import LOG, log_message
-from utils.custom_types import BattleStats, ClanStrikeInfo, DatabaseRiverRaceClan, StrikeType
+from utils.custom_types import BattleStats, ClanStrikeInfo, DatabaseRiverRaceClan, PredictedOutcome, RiverRaceClan, StrikeType
 from utils.exceptions import GeneralAPIError
 
 def update_clan_battle_day_stats(tag: str, post_race: bool):
@@ -227,3 +228,153 @@ def should_receive_strike(participation_data: ClanStrikeInfo, tag: str) -> Tuple
                                          user["medals"],
                                          participation_data["strike_threshold"],
                                          participation_data["completed_saturday"])
+
+
+def average_medals_per_deck(win_rate: float) -> float:
+    """Get the average medals per deck value at the specified win rate.
+
+    Assumes the player always plays 4 battles by playing a duel followed by normal matches (no boat battles). It's also assumed that
+    win rate is the same in duels and normal matches.
+
+    Medals per deck of a player that completes 4 battles with these assumptions can be calculated as
+    F(p) = -25p^3 + 25p^2 + 125p + 100 where F(p) is medals per deck and p is probability of winning any given match (win rate). This
+    was determined by calculating the expected number of duel matches played in a Bo3 at a given win rate, then subtracting that
+    from 4 to determine how many normal matches are played. These quantities are then multiplied by the average amount of medals a
+    deck is worth in each game mode. This is equal to f = 250p + 100(1-p) for duels and f = 200p + 100(1-p) for normal matches.
+
+    Args:
+        win_rate: Player win rate in PvP matches.
+
+    Returns:
+        Average medals per deck used.
+    """
+    return (-25 * win_rate**3) + (25 * win_rate**2) + (125 * win_rate) + 100
+
+
+def calculate_win_rate_from_average_medals(avg_medals_per_deck: float) -> float:
+    """Solve the polynomial described in average_medals_per_deck.
+
+    Determine what win rate is needed to achieve the specified medals per deck. All assumptions described above hold true here as
+    well. If no roots can be determined, then None is returned.
+
+    Args:
+        avg_medals_per_deck: Average medals per deck to calculate win rate of.
+
+    Returns:
+        Win rate needed to achieve the specified average medals per deck, or None if no solution exists.
+    """
+    roots = numpy.roots([-25, 25, 125, (100 - avg_medals_per_deck)])
+    win_rate = None
+
+    for root in roots:
+        if 0 <= root <= 1:
+            win_rate = root
+
+    return win_rate
+
+
+def predict_race_outcome(tag: str, historical_win_rates: bool, historical_deck_usage: bool) -> List[PredictedOutcome]:
+    """Predict the outcome of the current Battle Day.
+
+    Returns:
+        List of each clan's predicted outcome for today sorted from first to last.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+    """
+    database_clan_data = db_utils.get_current_season_river_race_clans(tag)
+    current_clan_data = clash_utils.get_clans_in_race(tag, False)
+    medals_per_deck: Dict[str, float] = {}
+    expected_deck_usage: Dict[str, int] = {}
+    predicted_outcomes: List[PredictedOutcome] = []
+    is_colosseum_week = db_utils.is_colosseum_week(tag)
+
+    if not database_clan_data:
+        LOG.error(f"No saved River Race clans for {tag} to make prediction")
+        db_utils.update_river_race_clans(tag)
+        return predicted_outcomes
+    elif database_clan_data.keys() != current_clan_data.keys():
+        LOG.error(log_message("Mismatch between saved and current River Race clans",
+                              tag=tag,
+                              database_clan_data=database_clan_data,
+                              current_clan_data=current_clan_data))
+        return predicted_outcomes
+
+    combined_data: Dict[str, Tuple[DatabaseRiverRaceClan, RiverRaceClan]] =\
+        {clan_tag: (database_clan_data[clan_tag], current_clan_data[clan_tag]) for clan_tag in current_clan_data}
+
+    for clan_tag, (saved_clan_data, current_clan_data) in combined_data.items():
+        # Calculate each clan's average medals per deck
+        if historical_win_rates:
+            total_decks = current_clan_data["decks_used_today"] + saved_clan_data["total_season_battle_decks"]
+            total_medals = ((current_clan_data["medals"] - saved_clan_data["current_race_medals"]) +
+                            saved_clan_data["total_season_medals"])
+
+            if total_decks == 0:
+                medals_per_deck[clan_tag] = 165.625
+            else:
+                medals_per_deck[clan_tag] = total_medals / total_decks
+        else:
+            medals_per_deck[clan_tag] = 165.625
+
+        current_decks_used_today = current_clan_data["decks_used_today"]
+
+        # Calculate expected number of decks for each to clan to use
+        if historical_deck_usage:
+            if saved_clan_data["battle_days"] == 0:
+                expected_decks_left = 200 - current_decks_used_today
+            else:
+                avg_deck_usage = round(saved_clan_data["total_season_battle_decks"] / saved_clan_data["battle_days"])
+
+                if current_decks_used_today > avg_deck_usage:
+                    expected_decks_left = round((200 - current_decks_used_today) * 0.25)
+                else:
+                    expected_decks_left = avg_deck_usage - current_decks_used_today
+
+            expected_deck_usage[clan_tag] = expected_decks_left
+        else:
+            expected_deck_usage[clan_tag] = 200 - current_decks_used_today
+    
+    # Calculate predicted scores
+    for clan_tag, (saved_clan_data, current_clan_data) in combined_data.items():
+        base_medals = current_clan_data["medals"] - (0 if is_colosseum_week else saved_clan_data["current_race_medals"])
+        predicted_score = 50 * round((base_medals + (expected_deck_usage[clan_tag] * medals_per_deck[clan_tag])) / 50)
+
+        predicted_outcome: PredictedOutcome = {
+            "tag": clan_tag,
+            "name": current_clan_data["name"],
+            "current_score": base_medals,
+            "predicted_score": predicted_score,
+            "win_rate": calculate_win_rate_from_average_medals(medals_per_deck[clan_tag]),
+            "expected_decks_to_use": expected_deck_usage[clan_tag],
+            "expected_decks_catchup_win_rate": None,
+            "remaining_decks": 200 - current_clan_data["decks_used_today"],
+            "remaining_decks_catchup_win_rate": None,
+            "completed": current_clan_data["completed"] and not is_colosseum_week
+        }
+
+        predicted_outcomes.append(predicted_outcome)
+
+    predicted_outcomes.sort(key=lambda x: x["predicted_score"], reverse=True)
+    winning_score = predicted_outcomes[0]["predicted_score"]
+
+    # Calculate win rates needed for clans not in first place to catch up
+    for predicted_outcome in predicted_outcomes[1:]:
+        clan_tag = predicted_outcome["tag"]
+        medals_to_reach_first = winning_score - predicted_outcome["current_score"]
+        expected_usage_avg_medals_needed = expected_deck_usage[clan_tag] / medals_to_reach_first
+        all_usage_avg_medals_needed = predicted_outcome["remaining_decks"] / medals_to_reach_first
+
+        if expected_usage_avg_medals_needed < 100:
+            predicted_outcome["expected_decks_catchup_win_rate"] = -1
+        else:
+            predicted_outcome["expected_decks_catchup_win_rate"] =\
+                calculate_win_rate_from_average_medals(expected_usage_avg_medals_needed)
+
+        if all_usage_avg_medals_needed < 100:
+            predicted_outcome["remaining_decks_catchup_win_rate"] = -1
+        else:
+            predicted_outcome["remaining_decks_catchup_win_rate"] =\
+                calculate_win_rate_from_average_medals(all_usage_avg_medals_needed)
+
+    return predicted_outcomes

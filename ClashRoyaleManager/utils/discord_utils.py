@@ -8,7 +8,7 @@ from prettytable import PrettyTable
 import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from log.logger import LOG, log_message
-from utils.custom_types import ReminderTime, SpecialChannel, SpecialRole
+from utils.custom_types import PredictedOutcome, ReminderTime, SpecialChannel, SpecialRole
 from utils.exceptions import GeneralAPIError
 from utils.channel_manager import CHANNEL
 from utils.role_manager import ROLE
@@ -452,5 +452,99 @@ def get_stats_report(player_tag: str,
     win_rate = "0.00%" if total == 0 else f"{wins / total:.2%}"
     embed.add_field(name="Boat Attacks",
                     value=f"```Wins   {wins}\nLosses {losses}\nTotal:  {total}\nWin Rate: {win_rate}```")
+
+    return embed
+
+
+def create_prediction_embed(tag: str, predicted_outcomes: List[PredictedOutcome]) -> discord.Embed:
+    """Take the predicted outcomes for each clan in a River Race and create an embed with the data.
+
+    Args:
+        tag: Tag of primary clan in River Race.
+        predicted_outcomes: Predicted outcome of each clan in the primary clan's River Race in order from first to last.
+
+    Returns:
+        Embed containing information about the predicted outcome for today.
+    """
+    completed_clan: str = None
+    primary_placement = 1
+    primary_predicted_outcome: PredictedOutcome
+
+    for predicted_outcome in predicted_outcomes:
+        if predicted_outcome["completed"]:
+            completed_clan = discord.utils.escape_markdown(predicted_outcome["name"])
+
+        if predicted_outcome["tag"] == tag:
+            primary_predicted_outcome = predicted_outcome
+            break
+
+        primary_placement += 1
+
+    if primary_placement == 1 or primary_predicted_outcome["completed"]:
+        color = discord.Color.green()
+    elif primary_placement == 2:
+        color = discord.Color.yellow()
+    elif primary_placement == 3:
+        color = discord.Color.orange()
+    elif primary_placement == 4:
+        color = discord.Color.red()
+    else:
+        color = discord.Color.dark_red()
+
+    description = ""
+
+    if completed_clan is not None:
+        description += f"{completed_clan} has already crossed the finish line and won the River Race."
+        description += "\n\n"
+
+    expected_catchup = primary_predicted_outcome["expected_decks_catchup_win_rate"]
+    all_remaining_catchup = primary_predicted_outcome["remaining_decks_catchup_win_rate"]
+    primary_name = discord.utils.escape_markdown(primary_predicted_outcome["name"])
+
+    if expected_catchup is not None and all_remaining_catchup is not None:
+        if expected_catchup == all_remaining_catchup:
+            if expected_catchup == -1:
+                description += (f"{primary_name} can surpass the predicted score of first place by using all "
+                                f"{primary_predicted_outcome['remaining_decks']} remaining decks at any win rate.")
+            else:
+                description += (f"{primary_name} can reach the predicted score of first place by using all "
+                                f"{primary_predicted_outcome['remaining_decks']} remaining decks at a "
+                                f"{round(all_remaining_catchup * 100, 2)}% win rate.")
+        else:
+            if expected_catchup == 1:
+                expected_str = "any win rate"
+            else:
+                expected_str = f"a {round(expected_catchup * 100, 2)}% win rate"
+
+            if all_remaining_catchup == -1:
+                all_remaining_str = "any win rate"
+            else:
+                all_remaining_str = f"a {round(all_remaining_catchup * 100, 2)}% win rate"
+
+            description += (f"{primary_name} can reach the predicted score of first place by using "
+                            f"{primary_predicted_outcome['expected_decks_to_use']} decks at {expected_str} or all "
+                            f"{primary_predicted_outcome['remaining_decks']} remaining decks at {all_remaining_str}.")
+    elif all_remaining_catchup is not None:
+        if all_remaining_catchup == -1:
+            description += (f"{primary_name} can surpass the predicted score of first place by using all "
+                            f"{primary_predicted_outcome['remaining_decks']} remaining decks at any win rate.")
+        else:
+            description += (f"{primary_name} can reach the predicted score of first place by using all"
+                            f"{primary_predicted_outcome['remaining_decks']} decks at a "
+                            f"{round(all_remaining_catchup * 100, 2)}% win rate.")
+    elif primary_placement != 1:
+        description += f"{primary_name} cannot reach the predicted score of first place today."
+
+    embed = discord.Embed(title="Predicted Outcome for Today", description=description, color=color)
+
+    for place, predicted_outcome in enumerate(predicted_outcomes, start=1):
+        embed.add_field(name=f"{place}. {discord.utils.escape_markdown(predicted_outcome['name'])}",
+                        value=("```"
+                               f"Score: {predicted_outcome['predicted_score']}\n"
+                               f"Win rate: {round(predicted_outcome['win_rate'] * 100, 2)}%\n"
+                               f"Expected decks to use: {predicted_outcome['expected_decks_to_use']}/"
+                               f"{predicted_outcome['remaining_decks']}"
+                               "```"),
+                        inline=False)
 
     return embed

@@ -184,3 +184,25 @@ class DatabaseReport(TypedDict):
     strikes: int
     kicks: int
     last_kicked: Union[datetime.datetime, None]
+
+
+class PredictedOutcome(TypedDict):
+    """Dictionary containing information about a clan's predicted outcome at the end of the day."""
+    tag: ClanTag
+    name: ClanName
+    current_score: int
+    predicted_score: int
+    win_rate: float
+    expected_decks_to_use: int
+    expected_decks_catchup_win_rate: Union[float, None]
+    remaining_decks: int
+    remaining_decks_catchup_win_rate: Union[float, None]
+    completed: bool
+
+
+class RiverRaceStatus(TypedDict):
+    """Dictionary containing information about how many decks a clan has left to use today."""
+    tag: ClanTag
+    name: ClanName
+    total_remaining_decks: int
+    active_remaining_decks: int
