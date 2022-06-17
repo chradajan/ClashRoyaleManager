@@ -178,12 +178,18 @@ class ClanStrikeInfo(TypedDict):
     users: Dict[PlayerTag, UserStrikeInfo]
 
 
+class KickData(TypedDict):
+    """Dictionary containing information about when a user has been kicked from a specific clan."""
+    tag: ClanTag
+    name: ClanName
+    kicks: List[datetime.datetime]
+
+
 class DatabaseReport(TypedDict):
     """Dictionary containing player report data retrieved from database."""
     discord_name: str
     strikes: int
-    kicks: int
-    last_kicked: Union[datetime.datetime, None]
+    kicks: Dict[str, KickData]
 
 
 class PredictedOutcome(TypedDict):

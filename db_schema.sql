@@ -79,10 +79,13 @@ DROP TABLE IF EXISTS `kicks`;
 CREATE TABLE `kicks` (
   `id` int NOT NULL AUTO_INCREMENT,
   `user_id` int NOT NULL,
+  `clan_id` int NOT NULL,
   `time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
-  CONSTRAINT `kicks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+  KEY `clan_id` (`clan_id`),
+  CONSTRAINT `kicks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
+  CONSTRAINT `kicks_ibfk_2` FOREIGN KEY (`clan_id`) REFERENCES `clans` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

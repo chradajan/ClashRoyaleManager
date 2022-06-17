@@ -28,6 +28,7 @@ from utils.custom_types import (
     ClashData,
     DatabaseReport,
     DatabaseRiverRaceClan,
+    KickData,
     PrimaryClan,
     ReminderTime,
     SpecialChannel,
@@ -656,18 +657,15 @@ def get_player_report_data(tag: str) -> DatabaseReport:
         return {
             "discord_name": "",
             "strikes": 0,
-            "kicks": 0,
-            "last_kicked": None
+            "kicks": {}
         }
 
     kicks = get_kicks(tag)
-    last_kick = kicks[-1] if kicks else None
 
     return {
         "discord_name": query_result["discord_name"],
         "strikes": query_result["strikes"],
-        "kicks": len(kicks),
-        "last_kicked": last_kick
+        "kicks": kicks
     }
 
 
@@ -1452,17 +1450,18 @@ def get_strike_count(id: int) -> int:
 #                            #
 ##############################
 
-def kick_user(tag: str) -> bool:
+def kick_user(player_tag: str, clan_tag: str) -> bool:
     """Log a kick for a user.
 
     Args:
-        tag: Tag of user to kick.
+        player_tag: Tag of user to kick.
+        clan_tag: Tag of clan to associate kick with.
 
     Returns:
         Whether the kick was successfully logged.
     """
     database, cursor = get_database_connection()
-    cursor.execute("SELECT id FROM users WHERE tag = %s", (tag))
+    cursor.execute("SELECT id FROM users WHERE tag = %s", (player_tag))
     query_result = cursor.fetchone()
 
     if query_result is None:
@@ -1470,25 +1469,94 @@ def kick_user(tag: str) -> bool:
         return False
 
     user_id = query_result["id"]
-    cursor.execute("INSERT INTO kicks (user_id) VALUES (%s)", (user_id))
+    cursor.execute("SELECT id FROM clans WHERE tag = %s", (clan_tag))
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        database.close()
+        return False
+
+    clan_id = query_result["id"]
+    cursor.execute("INSERT INTO kicks (user_id, clan_id) VALUES (%s, %s)", (user_id, clan_id))
     database.commit()
     database.close()
     return True
 
 
-def get_kicks(tag: str) -> List[datetime.datetime]:
+def undo_kick(player_tag: str, clan_tag: str) -> Union[datetime.datetime, None]:
+    """Delete the most recent kick logged for a user.
+
+    Args:
+        player_tag: Tag of user to undo kick for.
+        clan_tag: Tag of clan to look for kicks from.
+
+    Returns:
+        Time of most recent kick that was removed, or None if no kicks were removed.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT id FROM users WHERE tag = %s", (player_tag))
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        database.close()
+        return None
+
+    user_id = query_result["id"]
+    cursor.execute("SELECT id FROM clans WHERE tag = %s", (clan_tag))
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        database.close()
+        return None
+
+    clan_id = query_result["id"]
+    cursor.execute("SELECT time FROM kicks WHERE user_id = %s AND clan_id = %s", (user_id, clan_id))
+    kicks = [kick["time"] for kick in cursor]
+    kicks.sort()
+
+    if not kicks:
+        database.close()
+        return None
+
+    cursor.execute("DELETE FROM kicks WHERE time = %s AND user_id = %s AND clan_id = %s", (kicks[-1], user_id, clan_id))
+    database.commit()
+    database.close()
+    return kicks[-1]
+
+
+def get_kicks(tag: str) -> Dict[str, KickData]:
     """Get a list of times a user was kicked.
 
     Args:
         tag: Tag of user to get kicks of.
 
     Returns:
-        List of times the specified user was kicked.
+        Dictionary mapping clan tags to data about a user's kicks from that clan.
     """
+    primary_clans = get_primary_clans()
+    kick_data: Dict[str, KickData] = {}
+
+    for clan in primary_clans:
+        data: KickData = {
+            "tag": clan["tag"],
+            "name": clan["name"],
+            "kicks": []
+        }
+        kick_data[clan["tag"]] = data
+
     database, cursor = get_database_connection()
-    cursor.execute("SELECT time FROM kicks WHERE user_id = (SELECT id FROM users WHERE tag = %s)", (tag))
+    cursor.execute("SELECT time, tag FROM kicks INNER JOIN clans ON kicks.clan_id = clans.id WHERE kicks.user_id =\
+                    (SELECT id FROM users WHERE tag = %s)",
+                   (tag))
     database.close()
-    return [kick["time"] for kick in cursor]
+
+    for kick in cursor:
+        kick_data[kick["tag"]]["kicks"].append(kick["time"])
+
+    for data in kick_data.values():
+        data["kicks"].sort()
+
+    return kick_data
 
 
 ###############################################################
@@ -1669,7 +1737,8 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
         if user_data["role"]:
             user_data["role"] = user_data["role"].capitalize()
 
-        kicks = get_kicks(user_data["player_tag"])
+        kick_data = get_kicks(user_data["player_tag"])
+        kicks = kick_data[tag]["kicks"]
 
         # Users sheet data
         user_row = [user_data["player_name"], user_data["player_tag"], user_data["discord_name"], user_data["clan_name"],
@@ -1821,10 +1890,14 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
                      "Clan Role", "Strikes", "Kicks", "Join Date", "RoyaleAPI"]
     users_sheet.write_row(0, 0, users_headers)
 
-    # Kicks sheet
-    kicks_sheet = workbook.add_worksheet("Kicks")
+    # Kicks sheets
+    kicks_sheets = {}
     kicks_headers = ["Player Name", "Player Tag"]
-    kicks_sheet.write_row(0, 0, kicks_headers)
+
+    for clan in primary_clans:
+        sheet = workbook.add_worksheet(f"{clan['name']} Kicks")
+        sheet.write_row(0, 0, kicks_headers)
+        kicks_sheets[clan["tag"]] = sheet
 
     # Stats sheets
     stats_sheets: List[Tuple[int, Worksheet]] = []
@@ -1872,10 +1945,11 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
                     user_data["first_joined"], clash_utils.royale_api_url(user_data["player_tag"])]
         users_sheet.write_row(row, 0, user_row)
 
-        # Kicks sheet data
-        kicks_row = [user_data["player_name"], user_data["player_tag"]]
-        kicks_row.extend([kick.strftime("%Y-%m-%d") for kick in kicks])
-        kicks_sheet.write_row(row, 0, kicks_row)
+        # Kicks sheets data
+        for clan_tag, kick_data in kicks.items():
+            kicks_row = [user_data["player_name"], user_data["player_tag"]]
+            kicks_row.extend([kick.strftime("%Y-%m-%d") for kick in kick_data["kicks"]])
+            kicks_sheets[clan_tag].write_row(row, 0, kicks_row)
 
         # Stats sheets data
         combined_stats = [0] * 18

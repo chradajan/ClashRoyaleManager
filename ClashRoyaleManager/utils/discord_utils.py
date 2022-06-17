@@ -330,16 +330,12 @@ def get_player_report(tag: str, card_levels: bool) -> discord.Embed:
     if database_data["discord_name"] is None:
         database_data["discord_name"] = "N/A"
 
-    table.add_row(["Discord Name", database_data["discord_name"]])
+    table.add_row(["Discord", database_data["discord_name"]])
     table.add_row(["Strikes", database_data["strikes"]])
-    table.add_row(["Kicks", database_data["kicks"]])
 
-    if database_data["last_kicked"] is None:
-        last_kicked = "Never"
-    else:
-        last_kicked = database_data["last_kicked"].strftime("%Y-%m-%d")
-
-    table.add_row(["Last Kicked", last_kicked])
+    for kick_data in database_data["kicks"].values():
+        clan_acronym = "".join([word[0] for word in kick_data["name"].split()])
+        table.add_row([f"{discord.utils.escape_markdown(clan_acronym)} kicks", len(kick_data["kicks"])])
 
     if clash_data["clan_name"] is None:
         clash_data["clan_name"] = "N/A"

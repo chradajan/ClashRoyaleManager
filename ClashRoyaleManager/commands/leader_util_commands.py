@@ -55,6 +55,7 @@ async def export(interaction: discord.Interaction,
                  weeks: Literal[1, 2, 3, 4, 5, 6]):
     """Export data to an Excel spreadsheet."""
     LOG.command_start(interaction, selection=selection, active_members_only=active_members_only, weeks=weeks)
+    await interaction.response.defer()
     if selection.value == "True":
         path = db_utils.export_all_clan_data(True, active_members_only)
     elif selection.value == "False":
@@ -62,12 +63,83 @@ async def export(interaction: discord.Interaction,
     else:
         path = db_utils.export_clan_data(selection.value, selection.name, active_members_only, weeks)
 
-    await interaction.response.send_message(file=discord.File(path))
+    await interaction.followup.send(file=discord.File(path))
+    LOG.command_end()
+
+
+@app_commands.command()
+@app_commands.describe(user="User to log a kick for")
+@app_commands.describe(clan="Clan to associate the kick with")
+async def kick(interaction: discord.Interaction, user: str, clan: PRIMARY_CLANS):
+    """Log that a user was kicked from a clan. Does NOT kick them from the Discord server."""
+    LOG.command_start(interaction, user=user)
+    member = discord_utils.get_member_from_mention(interaction, user)
+
+    if member is not None:
+        search_results = db_utils.get_user_in_database(member.id)
+    else:
+        search_results = db_utils.get_user_in_database(user)
+
+    if not search_results:
+        embed = discord_utils.user_not_found_embed(user)
+    elif len(search_results) > 1:
+        embed = discord_utils.duplicate_names_embed(search_results)
+    else:
+        player_tag, player_name, _ = search_results[0]
+        success = db_utils.kick_user(player_tag, clan.value)
+        player_name = discord.utils.escape_markdown(player_name)
+        clan_name = discord.utils.escape_markdown(clan.name)
+
+        if success:
+            embed = discord.Embed(title=f"A kick from {clan_name} has been logged for {player_name}",
+                                  color=discord.Color.green())
+        else:
+            embed = discord.Embed(title=f"{player_name} was not found in the database",
+                                  color=discord.Color.red())
+
+    await interaction.response.send_message(embed=embed)
+    LOG.command_end()
+
+
+@app_commands.command()
+@app_commands.describe(user="User to undo the most recent kick for")
+@app_commands.describe(clan="Remove the most recent kick associated with this clan")
+async def undo_kick(interaction: discord.Interaction, user: str, clan: PRIMARY_CLANS):
+    """Remove the most recent logged kick for a user."""
+    LOG.command_start(interaction, user=user)
+    member = discord_utils.get_member_from_mention(interaction, user)
+
+    if member is not None:
+        search_results = db_utils.get_user_in_database(member.id)
+    else:
+        search_results = db_utils.get_user_in_database(user)
+
+    if not search_results:
+        embed = discord_utils.user_not_found_embed(user)
+    elif len(search_results) > 1:
+        embed = discord_utils.duplicate_names_embed(search_results)
+    else:
+        player_tag, player_name, _ = search_results[0]
+        player_name = discord.utils.escape_markdown(player_name)
+        clan_name = discord.utils.escape_markdown(clan.name)
+        undone_kick = db_utils.undo_kick(player_tag, clan.value)
+
+        if undone_kick is None:
+            embed = discord.Embed(title=f"{player_name} was either not found or doesn't have any kicks",
+                                  color=discord.Color.yellow())
+        else:
+            undone_kick = undone_kick.strftime("%Y-%m-%d")
+            embed = discord.Embed(title=f"A kick on {undone_kick} from {clan_name} was undone for {player_name}",
+                                  color=discord.Color.green())
+
+    await interaction.response.send_message(embed=embed)
     LOG.command_end()
 
 
 @send_reminder.error
 @export.error
+@kick.error
+@undo_kick.error
 async def leader_util_commands_error_handler(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """Error handler for leader util commands."""
     if isinstance(error, GeneralAPIError):
@@ -84,5 +156,7 @@ async def leader_util_commands_error_handler(interaction: discord.Interaction, e
 LEADER_UTIL_COMMANDS = [
     send_reminder,
     export,
+    kick,
+    undo_kick,
 ]
 """Commands to be added by leader_util_commands module."""
