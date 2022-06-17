@@ -9,6 +9,7 @@ import utils.discord_utils as discord_utils
 from log.logger import LOG
 from utils.custom_types import ReminderTime, SpecialRole
 from utils.exceptions import GeneralAPIError, ResourceNotFound
+from utils.channel_manager import CHANNEL, SpecialChannel
 from utils.role_manager import ROLE
 
 
@@ -47,6 +48,8 @@ async def register(interaction: discord.Interaction, tag: str):
                 await discord_utils.assign_roles(interaction.user)
 
                 LOG.info("User successfully registered")
+                new_member_embed = discord_utils.create_card_levels_embed(clash_data)
+                await CHANNEL[SpecialChannel.AdminOnly].send(embed=new_member_embed)
                 embed = discord.Embed(title="Registration successful!",
                                       description=f"You have been registered as {clash_data['name']}.",
                                       color=discord.Color.green())

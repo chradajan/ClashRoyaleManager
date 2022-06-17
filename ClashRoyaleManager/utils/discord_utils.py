@@ -8,7 +8,13 @@ from prettytable import PrettyTable
 import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from log.logger import LOG, log_message
-from utils.custom_types import PredictedOutcome, ReminderTime, SpecialChannel, SpecialRole
+from utils.custom_types import (
+    ClashData,
+    PredictedOutcome,
+    ReminderTime,
+    SpecialChannel,
+    SpecialRole
+)
 from utils.exceptions import GeneralAPIError
 from utils.channel_manager import CHANNEL
 from utils.role_manager import ROLE
@@ -558,4 +564,45 @@ def create_prediction_embed(tag: str, predicted_outcomes: List[PredictedOutcome]
                                "```"),
                         inline=False)
 
+    return embed
+
+
+def create_card_levels_embed(clash_data: ClashData) -> discord.Embed:
+    """Create an embed containing information about a user's card levels.
+
+    Args:
+        clash_data: Data containing a user's level, trophies, and card levels.
+
+    Returns:
+        Embed with level information and card level percentiles.
+    """
+    embed = discord.Embed(title=f"{discord.utils.escape_markdown(clash_data['name'])} just joined the server!",
+                          url=clash_utils.royale_api_url(clash_data["tag"]))
+
+    embed.add_field(name="Stats",
+                    value=("```"
+                            f"Level: {clash_data['exp_level']}\n"
+                            f"Trophies: {clash_data['trophies']}\n"
+                            f"Best Trophies: {clash_data['best_trophies']}\n"
+                            f"Cards Owned: {clash_data['found_cards']}/{clash_data['total_cards']}"
+                            "```"),
+                    inline=False)
+
+    found_cards = clash_data["found_cards"]
+    card_level_string = ""
+    percentile = 0
+
+    for i in range(14, 0, -1):
+        percentile += clash_data["cards"][i] / found_cards
+        percentage = round(percentile * 100)
+
+        if 0 < percentage < 5:
+            card_level_string += f"{i:02d}: {'▪':<20}  {percentage:02d}%\n"
+        else:
+            card_level_string += f"{i:02d}: {(percentage // 5) * '■':<20}  {percentage:02d}%\n"
+
+        if percentage == 100:
+            break
+
+    embed.add_field(name="Card Levels", value=f"```{card_level_string}```", inline=False)
     return embed
