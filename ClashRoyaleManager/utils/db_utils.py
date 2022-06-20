@@ -1938,10 +1938,14 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
             user_data["first_joined"] = user_data["first_joined"].strftime("%Y-%m-%d %H:%M")
 
         kicks = get_kicks(user_data["player_tag"])
+        total_kicks = 0
+
+        for kick_data in kicks.values():
+            total_kicks += len(kick_data["kicks"])
 
         # Users sheet data
         user_row = [user_data["player_name"], user_data["player_tag"], user_data["discord_name"], user_data["clan_name"],
-                    user_data["clan_tag"], user_data["role"].capitalize(), user_data["strikes"], len(kicks),
+                    user_data["clan_tag"], user_data["role"].capitalize(), user_data["strikes"], total_kicks,
                     user_data["first_joined"], clash_utils.royale_api_url(user_data["player_tag"])]
         users_sheet.write_row(row, 0, user_row)
 
