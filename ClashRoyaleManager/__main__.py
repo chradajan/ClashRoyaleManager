@@ -19,6 +19,8 @@ from log.logger import LOG
 from utils.channel_manager import CHANNEL
 from utils.role_manager import ROLE
 
+ON_READY_CALLED = False
+
 def main():
     """Start ClashRoyaleManager."""
     guild_id = db_utils.get_guild_id()
@@ -57,6 +59,12 @@ def main():
 
     @bot.event
     async def on_ready():
+        global ON_READY_CALLED
+
+        if ON_READY_CALLED:
+            LOG.debug("On ready called again after initial startup")
+            return
+
         await bot.tree.sync(guild=guild)
         CHANNEL.initialize_channels(bot.get_guild(guild_id))
         ROLE.initialize_roles(bot.get_guild(guild_id))
@@ -67,6 +75,7 @@ def main():
 
         LOG.info("Bot started")
         print("Bot Ready")
+        ON_READY_CALLED = True
 
     bot.run(BOT_TOKEN)
 
