@@ -43,6 +43,7 @@ async def assign_roles(member: discord.Member):
         correct_roles = {ROLE[SpecialRole.Visitor]}
     else:
         clan_tag, in_primary_clan, clan_role = clan_affiliation
+
         if in_primary_clan:
             correct_roles = {
                 ROLE.get_affiliated_clan_role(clan_tag),
@@ -138,6 +139,10 @@ async def update_all_members(guild: discord.Guild):
     for discord_id in members_to_update:
         LOG.info("Updating member due to database clean up flag")
         member = guild.get_member(discord_id)
+
+        if member is None:
+            continue
+
         await update_member(member, False)
 
 
