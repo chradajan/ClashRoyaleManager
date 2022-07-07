@@ -103,6 +103,7 @@ CREATE TABLE `primary_clans` (
   `assign_strikes` tinyint(1) NOT NULL,
   `strike_type` enum('decks','medals') NOT NULL,
   `strike_threshold` int NOT NULL,
+  `discord_channel_id`  bigint unsigned NOT NULL,
   PRIMARY KEY (`clan_id`),
   CONSTRAINT `primary_clans_ibfk_1` FOREIGN KEY (`clan_id`) REFERENCES `clans` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -224,7 +225,7 @@ DROP TABLE IF EXISTS `special_discord_channels`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `special_discord_channels` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `channel` enum('strikes','reminders','admin_only') NOT NULL,
+  `channel` enum('strikes','admin_only') NOT NULL,
   `discord_channel_id` bigint unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `channel` (`channel`)

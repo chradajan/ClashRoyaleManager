@@ -180,21 +180,13 @@ class AutomatedRoutines(commands.Cog):
         async def automated_reminder_us():
             """Send a reminder for all clans with reminders enabled. Mention users with a US reminder time preference."""
             LOG.automation_start("Sending US reminders")
-            send_embed = False
             primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
             for tag, clan in primary_clans.items():
                 if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
                     LOG.info(f"Sending reminder for {tag}")
-                    send_embed = True
-                    await discord_utils.send_reminder(tag, ReminderTime.US)
-
-            if send_embed:
-                embed = discord.Embed(title="This is an automated reminder",
-                                      description=("Any Discord users that have their reminder time preference set to `US` were "
-                                                   "pinged. If you were pinged but would like to to be mentioned in the earlier "
-                                                   "reminder, use the `/set_reminder_time` command and choose `EU`."))
-                await CHANNEL[SpecialChannel.Reminders].send(embed=embed)
+                    channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
+                    await discord_utils.send_reminder(tag, channel, ReminderTime.US, True)
 
             LOG.automation_end()
 
@@ -203,21 +195,13 @@ class AutomatedRoutines(commands.Cog):
         async def automated_reminder_eu():
             """Send a reminder for all clans with reminders enabled. Mention users with an EU reminder time preference."""
             LOG.automation_start("Sending EU reminders")
-            send_embed = False
             primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
             for tag, clan in primary_clans.items():
                 if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
                     LOG.info(f"Sending reminder for {tag}")
-                    send_embed = True
-                    await discord_utils.send_reminder(tag, ReminderTime.EU)
-
-            if send_embed:
-                embed = discord.Embed(title="This is an automated reminder",
-                                    description=("Any Discord users that have their reminder time preference set to `EU` were "
-                                                 "pinged. If you were pinged but would like to to be mentioned in the later "
-                                                 "reminder, use the `/set_reminder_time` command and choose `US`."))
-                await CHANNEL[SpecialChannel.Reminders].send(embed=embed)
+                    channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
+                    await discord_utils.send_reminder(tag, channel, ReminderTime.EU, True)
 
             LOG.automation_end()
 

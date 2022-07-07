@@ -42,7 +42,6 @@ class SpecialRole(Enum):
 class SpecialChannel(Enum):
     """Enum of relevant Discord channels."""
     Strikes = "strikes"
-    Reminders = "reminders"
     AdminOnly = "admin_only"
 
 
@@ -85,6 +84,7 @@ class PrimaryClan(TypedDict):
     assign_strikes: bool
     strike_type: StrikeType
     strike_threshold: int
+    discord_channel_id: int
 
 
 class RiverRaceInfo(TypedDict):

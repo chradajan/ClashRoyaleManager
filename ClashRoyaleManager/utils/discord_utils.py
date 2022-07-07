@@ -146,19 +146,19 @@ async def update_all_members(guild: discord.Guild):
         await update_member(member, False)
 
 
-async def send_reminder(tag: str, reminder_time: ReminderTime):
+async def send_reminder(tag: str, channel: discord.TextChannel, reminder_time: ReminderTime, automated: bool):
     """Send a reminder to the Reminders channel tagging users that have remaining decks.
 
     Args:
         tag: Tag of clan to send reminder to.
         reminder_time: Only include people in reminder in the specified reminder time.
+        automated: Whether this is an automated reminder.
 
     Raises:
         GeneralAPIError: Unable to get decks report.
     """
     decks_report = clash_utils.get_decks_report(tag)
     preferred_reminder_times = db_utils.get_user_reminder_times(reminder_time)
-    channel = CHANNEL[SpecialChannel.Reminders]
     clan_name = db_utils.get_clan_name(tag)
     users_to_remind = ""
     headers = [
@@ -196,6 +196,18 @@ async def send_reminder(tag: str, reminder_time: ReminderTime):
         users_to_remind += "\n"
         message = f"**The following members of {discord.utils.escape_markdown(clan_name)} still have decks left to use today:**\n"
         message += users_to_remind
+
+        if automated:
+            if reminder_time == ReminderTime.US:
+                embed = discord.Embed(title="This is an automated reminder",
+                                      description=("Any Discord users that have their reminder time preference set to `US` were "
+                                                   "pinged. If you were pinged but would like to to be mentioned in the earlier "
+                                                   "reminder, use the `/set_reminder_time` command and choose `EU`."))
+            else:
+                embed = discord.Embed(title="This is an automated reminder",
+                                      description=("Any Discord users that have their reminder time preference set to `EU` were "
+                                                   "pinged. If you were pinged but would like to to be mentioned in the later "
+                                                   "reminder, use the `/set_reminder_time` command and choose `US`."))
     else:
         if reminder_time == ReminderTime.ALL:
             message = f"All members of {discord.utils.escape_markdown(clan_name)} have already used all their decks today."

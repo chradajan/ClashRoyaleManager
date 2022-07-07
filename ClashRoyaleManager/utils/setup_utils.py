@@ -57,6 +57,7 @@ def set_special_channel(special_channel: SpecialChannel, discord_channel: discor
 
 def set_primary_clan(tag: str,
                      role: discord.Role,
+                     channel: discord.TextChannel,
                      track_stats: bool,
                      send_reminders: bool,
                      assign_strikes: bool,
@@ -67,6 +68,7 @@ def set_primary_clan(tag: str,
     Args:
         tag: Tag of primary clan.
         role: Discord role given to members of this clan.
+        channel: Discord channel associated with this clan.
         track_stats: Whether to track deck usage and Battle Day stats for members of this clan.
         send_reminders: Whether to send automated reminders to members of this clan.
         assign_strikes: Whether to assign automated strikes to members of this clan.
@@ -93,13 +95,16 @@ def set_primary_clan(tag: str,
         "send_reminders": send_reminders,
         "assign_strikes": assign_strikes,
         "strike_type": strike_type.value,
-        "strike_threshold": strike_threshold
+        "strike_threshold": strike_threshold,
+        "discord_channel_id": channel.id
     }
     cursor.execute("INSERT INTO primary_clans VALUES\
-                    (%(clan_id)s, %(track_stats)s, %(send_reminders)s, %(assign_strikes)s, %(strike_type)s, %(strike_threshold)s)\
+                    (%(clan_id)s, %(track_stats)s, %(send_reminders)s, %(assign_strikes)s,\
+                     %(strike_type)s, %(strike_threshold)s, %(discord_channel_id)s)\
                     ON DUPLICATE KEY UPDATE track_stats = %(track_stats)s, send_reminders = %(send_reminders)s,\
-                    assign_strikes = %(assign_strikes)s, strike_type = %(strike_type)s, strike_threshold = %(strike_threshold)s",
-                    args_dict)
+                    assign_strikes = %(assign_strikes)s, strike_type = %(strike_type)s, strike_threshold = %(strike_threshold)s,\
+                    discord_channel_id = %(discord_channel_id)s",
+                   args_dict)
     cursor.execute("SELECT name FROM clans WHERE id = %s", (clan_id))
     name = cursor.fetchone()["name"]
     database.commit()

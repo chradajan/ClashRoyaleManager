@@ -8,7 +8,7 @@ from discord import app_commands
 
 import utils.db_utils as db_utils
 import utils.discord_utils as discord_utils
-from log.logger import LOG
+from log.logger import LOG, log_message
 from utils.channel_manager import CHANNEL
 from utils.custom_types import ReminderTime, SpecialChannel
 from utils.exceptions import GeneralAPIError
@@ -21,20 +21,27 @@ async def send_reminder(interaction: discord.Interaction, clan: PRIMARY_CLANS):
     """Send a reminder to members of a clan that have not used all their decks today."""
     LOG.command_start(interaction, clan=clan)
     ephemeral = False
+    channel_id = db_utils.get_clan_affiliated_channel_id(clan.value)
+    channel = interaction.guild.get_channel(channel_id)
 
-    try:
-        await discord_utils.send_reminder(clan.value, ReminderTime.ALL)
-        embed = discord.Embed(title="Reminder sent",
-                              description=(f"Reminder for members of {discord.utils.escape_markdown(clan.name)} sent to "
-                                           f"#{discord.utils.escape_markdown(CHANNEL[SpecialChannel.Reminders].name)}"),
-                              color=discord.Color.green())
-
-        if interaction.channel == CHANNEL[SpecialChannel.Reminders]:
-            ephemeral = True
-    except GeneralAPIError:
-        embed = discord.Embed(title="Reminder failed to send",
-                              description="The Clash Royale API is currently inaccessible.",
+    if channel is None:
+        LOG.warning(log_message("Attempted to send reminder to channel that does not exist", channel_id=channel_id))
+        embed = discord.Embed(title="Specified clan does not have an associated channel to send reminder to",
                               color=discord.Color.red())
+    else:
+        try:
+            await discord_utils.send_reminder(clan.value, channel, ReminderTime.ALL, False)
+            embed = discord.Embed(title="Reminder sent",
+                                  description=(f"Reminder for members of {discord.utils.escape_markdown(clan.name)} sent to "
+                                               f"#{discord.utils.escape_markdown(channel.name)}"),
+                                  color=discord.Color.green())
+
+            if interaction.channel == channel:
+                ephemeral = True
+        except GeneralAPIError:
+            embed = discord.Embed(title="Reminder failed to send",
+                                  description="The Clash Royale API is currently inaccessible.",
+                                  color=discord.Color.red())
 
     await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
     LOG.command_end()

@@ -49,12 +49,12 @@ async def register_special_role(interaction: discord.Interaction, special_status
 
 @app_commands.command()
 @app_commands.checks.has_permissions(administrator=True)
-@app_commands.describe(channel_purpose="Whether this channel is for automated reminders or strikes")
-@app_commands.describe(channel="Channel where automated reminders or strikes will be sent to")
+@app_commands.describe(channel_purpose="Whether this channel is for strike notifications or admin notifications")
+@app_commands.describe(channel="Discord text channel where notifications regarding the specified purpose will be sent")
 async def register_special_channel(interaction: discord.Interaction,
-                                    channel_purpose: SpecialChannel,
-                                    channel: discord.TextChannel):
-    """Determine where automated strikes and reminders are sent, as well as messages that only admins should see."""
+                                   channel_purpose: SpecialChannel,
+                                   channel: discord.TextChannel):
+    """Set text channel for strike and admin notification messages to be sent to."""
     if interaction.client.user not in channel.members:
         embed = discord.Embed(title=f"ClashRoyaleManager needs to be a member of #{channel} in order to send messages.",
                                 description="Either add ClashRoyaleManager to the channel or choose a different channel.",
@@ -67,10 +67,8 @@ async def register_special_channel(interaction: discord.Interaction,
     else:
         setup_utils.set_special_channel(channel_purpose, channel)
 
-        if channel_purpose == SpecialChannel.Reminders:
-            embed = discord.Embed(title=f"Automated reminders will now be sent to #{channel}", color=discord.Color.green())
-        elif channel_purpose == SpecialChannel.Strikes:
-            embed = discord.Embed(title=f"Automated strikes will now be sent to #{channel}", color=discord.Color.green())
+        if channel_purpose == SpecialChannel.Strikes:
+            embed = discord.Embed(title=f"Strike notifications will now be sent to #{channel}", color=discord.Color.green())
         elif channel_purpose == SpecialChannel.AdminOnly:
             embed = discord.Embed(title=f"Privileged messages will now be sent to #{channel}", color=discord.Color.green())
         else:
@@ -82,7 +80,8 @@ async def register_special_channel(interaction: discord.Interaction,
 @app_commands.command()
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(tag="Tag of clan to designate as a primary clan")
-@app_commands.describe(role="Discord role to assign members of this clan")
+@app_commands.describe(role="Discord role assigned to members of this clan")
+@app_commands.describe(channel="Discord text channel associated with this clan")
 @app_commands.describe(track_stats="Whether to track deck usage and Battle Day stats of clan")
 @app_commands.describe(send_reminders="Whether to send automated reminders to members of the clan on Battle Days")
 @app_commands.describe(assign_strikes="Whether to assign automated strikes to members of the clan based on low participation")
@@ -91,6 +90,7 @@ async def register_special_channel(interaction: discord.Interaction,
 async def register_primary_clan(interaction: discord.Interaction,
                                 tag: str,
                                 role: discord.Role,
+                                channel: discord.TextChannel,
                                 track_stats: bool,
                                 send_reminders: bool,
                                 assign_strikes: bool,
@@ -105,6 +105,7 @@ async def register_primary_clan(interaction: discord.Interaction,
         try:
             name = setup_utils.set_primary_clan(processed_tag,
                                                 role,
+                                                channel,
                                                 track_stats,
                                                 send_reminders,
                                                 assign_strikes,

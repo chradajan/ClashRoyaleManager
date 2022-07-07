@@ -456,7 +456,8 @@ def get_primary_clans() -> List[PrimaryClan]:
             "send_reminders": clan["send_reminders"],
             "assign_strikes": clan["assign_strikes"],
             "strike_type": StrikeType(clan["strike_type"]),
-            "strike_threshold": clan["strike_threshold"]
+            "strike_threshold": clan["strike_threshold"],
+            "discord_channel_id": clan["discord_channel_id"]
         }
         primary_clans.append(clan_data)
 
@@ -761,6 +762,28 @@ def get_special_channel_id(special_channel: SpecialChannel) -> Union[int, None]:
     database.close()
     channel_id = query_result["discord_channel_id"] if query_result is not None else None
     return channel_id
+
+
+def get_clan_affiliated_channel_id(tag: str) -> Union[int, None]:
+    """Get the Discord channel ID of the channel associated with the specified primary clan.
+
+    Args:
+        tag: Tag of primary clan to get channel for.
+
+    Returns:
+        ID of associated channel, or None if specified clan is not a primary clan.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_channel_id FROM primary_clans INNER JOIN clans ON primary_clans.clan_id = clans.id\
+                    WHERE tag = %s",
+                   (tag))
+    query_result = cursor.fetchone()
+    database.close()
+
+    if query_result is None:
+        return None
+
+    return query_result["discord_channel_id"]
 
 
 def get_clan_affiliated_role_id(tag: str) -> Union[int, None]:
