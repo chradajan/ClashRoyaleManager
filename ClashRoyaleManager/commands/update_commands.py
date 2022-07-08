@@ -21,10 +21,7 @@ async def register(interaction: discord.Interaction, tag: str):
     LOG.command_start(interaction, tag=tag)
     processed_tag = clash_utils.process_clash_royale_tag(tag)
 
-    if ROLE[SpecialRole.New] not in interaction.user.roles:
-        LOG.debug("User without New role tried to register")
-        embed = discord.Embed(title="You must be a new member to use this command.", color=discord.Color.red())
-    elif processed_tag is None:
+    if processed_tag is None:
         LOG.debug("User provided invalid player tag")
         embed = discord.Embed(title="You entered an invalid Supercell tag. Please try again.", color=discord.Color.red())
     elif processed_tag in (clans := db_utils.get_clans_in_database()):
