@@ -53,6 +53,24 @@ CREATE TABLE `clan_role_discord_roles` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `clan_time`
+--
+
+DROP TABLE IF EXISTS `clan_time`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `clan_time` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `clan_affiliation_id` int NOT NULL,
+  `start` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `end` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `clan_affiliation_id` (`clan_affiliation_id`),
+  CONSTRAINT `clan_time_ibfk_1` FOREIGN KEY (`clan_affiliation_id`) REFERENCES `clan_affiliations` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `clans`
 --
 
@@ -103,7 +121,7 @@ CREATE TABLE `primary_clans` (
   `assign_strikes` tinyint(1) NOT NULL,
   `strike_type` enum('decks','medals') NOT NULL,
   `strike_threshold` int NOT NULL,
-  `discord_channel_id`  bigint unsigned NOT NULL,
+  `discord_channel_id` bigint unsigned NOT NULL,
   PRIMARY KEY (`clan_id`),
   CONSTRAINT `primary_clans_ibfk_1` FOREIGN KEY (`clan_id`) REFERENCES `clans` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -128,6 +146,8 @@ CREATE TABLE `river_race_clans` (
   `total_season_battle_decks` int NOT NULL DEFAULT '0',
   `battle_days` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
+  KEY `river_race_clans_ibfk_1` (`clan_id`),
+  KEY `river_race_clans_ibfk_2` (`season_id`),
   CONSTRAINT `river_race_clans_ibfk_1` FOREIGN KEY (`clan_id`) REFERENCES `clans` (`id`),
   CONSTRAINT `river_race_clans_ibfk_2` FOREIGN KEY (`season_id`) REFERENCES `seasons` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -144,7 +164,7 @@ CREATE TABLE `river_race_user_data` (
   `clan_affiliation_id` int NOT NULL,
   `river_race_id` int NOT NULL,
   `last_check` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `tracked_since` timestamp DEFAULT NULL,
+  `tracked_since` timestamp NULL DEFAULT NULL,
   `medals` int NOT NULL DEFAULT '0',
   `regular_wins` int NOT NULL DEFAULT '0',
   `regular_losses` int NOT NULL DEFAULT '0',
@@ -296,4 +316,4 @@ INSERT INTO `variables` VALUES (DEFAULT, DEFAULT);
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2022-05-17  3:38:42
+-- Dump completed on 2022-07-08 18:30:52

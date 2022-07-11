@@ -105,6 +105,15 @@ def update_clan_affiliation(clash_data: ClashData, cursor: Optional[pymysql.curs
         close_connection = True
         database, cursor = get_database_connection()
 
+    # Get ID of current affiliation if one exists.
+    cursor.execute("SELECT id FROM clan_affiliations WHERE user_id = %(user_id)s AND role IS NOT NULL", clash_data)
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        current_affiliation_id = None
+    else:
+        current_affiliation_id = query_result["id"]
+
     # Nullify any existing affiliations.
     cursor.execute("UPDATE clan_affiliations SET role = NULL WHERE user_id = %(user_id)s", clash_data)
 
@@ -144,6 +153,20 @@ def update_clan_affiliation(clash_data: ClashData, cursor: Optional[pymysql.curs
                                     VALUES (%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s)\
                                     ON DUPLICATE KEY UPDATE clan_affiliation_id = clan_affiliation_id",
                                    clash_data)
+
+    # If affiliation has changed, make relevant changes to clan_time table.
+    new_affiliation_id = clash_data.get("clan_affiliation_id")
+
+    if current_affiliation_id != new_affiliation_id:
+        LOG.info(log_message("Updating clan times",
+                             current_affiliation_id=current_affiliation_id,
+                             new_affiliation_id=new_affiliation_id))
+
+        if current_affiliation_id is not None:
+            cursor.execute("UPDATE clan_time SET end = CURRENT_TIMESTAMP WHERE clan_affiliation_id = %s AND end IS NULL",
+                           (current_affiliation_id))
+        if new_affiliation_id is not None:
+            cursor.execute("INSERT INTO clan_time (clan_affiliation_id) VALUES (%s)", (new_affiliation_id))
 
     if close_connection:
         database.commit()
@@ -364,7 +387,7 @@ def set_reminder_time(discord_id: int, reminder_time: ReminderTime):
         reminder_time: New preferred time to receive reminders.
     """
     database, cursor = get_database_connection()
-    affected_rows = cursor.execute("UPDATE users SET reminder_time = %s WHERE discord_id = %s", (reminder_time.value, discord_id))
+    cursor.execute("UPDATE users SET reminder_time = %s WHERE discord_id = %s", (reminder_time.value, discord_id))
     database.commit()
     database.close()
 
@@ -1349,6 +1372,40 @@ def get_stats(player_tag: str, clan_tag: Optional[str]=None) -> BattleStats:
     return stats
 
 
+def time_in_clan(player_tag: str, clans: List[str]) -> datetime.timedelta:
+    """Get the amount of time a user has spent in the specified clans.
+
+    Args:
+        player_tag: Tag of user to check.
+        clans: List of clan tags. Will sum up time spent in each of these clans.
+
+    Returns:
+        Time spent in specified clans.
+    """
+    for i, tag in enumerate(clans):
+        clans[i] = "'" + tag + "'"
+
+    clan_tags_str = ", ".join(clans)
+    query = ("SELECT * FROM clan_time WHERE clan_affiliation_id IN ("
+             "SELECT id FROM clan_affiliations WHERE "
+             "user_id = (SELECT id FROM users WHERE tag = %s) AND "
+             f"clan_id IN (SELECT id FROM clans WHERE tag IN ({clan_tags_str})))")
+
+    database, cursor = get_database_connection()
+    cursor.execute(query, (player_tag))
+    time_in_clans = datetime.timedelta()
+    now = datetime.datetime.utcnow()
+
+    for time_period in cursor:
+        if time_period["end"] is None:
+            time_in_clans += now - time_period["start"]
+        else:
+            time_in_clans += time_period["end"] - time_period["start"]
+
+    database.close()
+    return time_in_clans
+
+
 ########################################
 #    ____  _        _ _                #
 #   / ___|| |_ _ __(_) | _____  ___    #
@@ -1690,7 +1747,7 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
     # Users sheet
     users_sheet = workbook.add_worksheet("Players")
     users_headers = ["Player Name", "Player Tag", "Discord Name", "Clan Name", "Clan Tag",
-                     "Clan Role", "Strikes", "Kicks", "Join Date", "RoyaleAPI"]
+                     "Clan Role", "Strikes", "Kicks", "Join Date", "Days In Clan", "RoyaleAPI"]
     users_sheet.write_row(0, 0, users_headers)
 
     # Kicks sheet
@@ -1714,11 +1771,11 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
                      "Combined PvP Wins", "Combined PvP Losses", "Combined PvP Win Rate"]
 
     for river_race in query_result:
-        stats_sheet_name = f"{river_race['season_id']}-{river_race['week']} Stats"
+        stats_sheet_name = f"S{river_race['season_id']}-W{river_race['week']} Stats"
         stats_sheet = workbook.add_worksheet(stats_sheet_name)
         stats_sheet.write_row(0, 0, stats_headers)
 
-        history_sheet_name = f"{river_race['season_id']}-{river_race['week']} History"
+        history_sheet_name = f"S{river_race['season_id']}-W{river_race['week']} History"
         history_sheet = workbook.add_worksheet(history_sheet_name)
         history_headers = ["Player Name", "Player Tag"]
         history_header_date = river_race["start_time"]
@@ -1763,10 +1820,12 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
         kick_data = get_kicks(user_data["player_tag"])
         kicks = kick_data[tag]["kicks"]
 
+        days = time_in_clan(user_data["player_tag"], [tag]).days
+
         # Users sheet data
         user_row = [user_data["player_name"], user_data["player_tag"], user_data["discord_name"], user_data["clan_name"],
                     user_data["clan_tag"], user_data["role"], user_data["strikes"], len(kicks),
-                    user_data["first_joined"].strftime("%Y-%m-%d %H:%M"), clash_utils.royale_api_url(user_data["player_tag"])]
+                    user_data["first_joined"].strftime("%Y-%m-%d %H:%M"), days, clash_utils.royale_api_url(user_data["player_tag"])]
         users_sheet.write_row(row, 0, user_row)
 
         # Kicks sheet data
@@ -1882,6 +1941,7 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
     """
     clean_up_database()
     primary_clans = get_primary_clans()
+    clan_tags = [primary_clan["tag"] for primary_clan in primary_clans]
 
     for clan in primary_clans:
         add_unregistered_users(clan["tag"])
@@ -1910,7 +1970,7 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
     # Users sheet
     users_sheet = workbook.add_worksheet("Players")
     users_headers = ["Player Name", "Player Tag", "Discord Name", "Clan Name", "Clan Tag",
-                     "Clan Role", "Strikes", "Kicks", "Join Date", "RoyaleAPI"]
+                     "Clan Role", "Strikes", "Kicks", "Join Date", "Days In Clan Family", "RoyaleAPI"]
     users_sheet.write_row(0, 0, users_headers)
 
     # Kicks sheets
@@ -1966,10 +2026,12 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
         for kick_data in kicks.values():
             total_kicks += len(kick_data["kicks"])
 
+        total_days = time_in_clan(user_data["player_tag"], clan_tags).days
+
         # Users sheet data
         user_row = [user_data["player_name"], user_data["player_tag"], user_data["discord_name"], user_data["clan_name"],
                     user_data["clan_tag"], user_data["role"].capitalize(), user_data["strikes"], total_kicks,
-                    user_data["first_joined"], clash_utils.royale_api_url(user_data["player_tag"])]
+                    user_data["first_joined"], total_days, clash_utils.royale_api_url(user_data["player_tag"])]
         users_sheet.write_row(row, 0, user_row)
 
         # Kicks sheets data
