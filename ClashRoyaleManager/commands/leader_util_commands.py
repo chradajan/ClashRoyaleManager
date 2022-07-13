@@ -77,7 +77,7 @@ async def export(interaction: discord.Interaction,
 @app_commands.command()
 @app_commands.describe(user="User to log a kick for")
 @app_commands.describe(clan="Clan to associate the kick with")
-async def kick(interaction: discord.Interaction, user: str, clan: PRIMARY_CLANS):
+async def clan_kick(interaction: discord.Interaction, user: str, clan: PRIMARY_CLANS):
     """Log that a user was kicked from a clan. Does NOT kick them from the Discord server."""
     LOG.command_start(interaction, user=user)
     member = discord_utils.get_member_from_mention(interaction, user)
@@ -145,7 +145,7 @@ async def undo_kick(interaction: discord.Interaction, user: str, clan: PRIMARY_C
 
 @send_reminder.error
 @export.error
-@kick.error
+@clan_kick.error
 @undo_kick.error
 async def leader_util_commands_error_handler(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """Error handler for leader util commands."""
@@ -163,7 +163,7 @@ async def leader_util_commands_error_handler(interaction: discord.Interaction, e
 LEADER_UTIL_COMMANDS = [
     send_reminder,
     export,
-    kick,
+    clan_kick,
     undo_kick,
 ]
 """Commands to be added by leader_util_commands module."""
