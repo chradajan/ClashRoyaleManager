@@ -27,6 +27,7 @@ def main():
     guild = discord.Object(id=guild_id)
     intents = discord.Intents.default()
     intents.members = True
+    intents.message_content = True
     activity = discord.Game(name="Clash Royale")
     bot = commands.Bot(command_prefix='!',
                        activity=activity,
