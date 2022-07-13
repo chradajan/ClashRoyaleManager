@@ -282,7 +282,7 @@ CREATE TABLE `users` (
   `tag` varchar(16) NOT NULL,
   `name` varchar(50) NOT NULL,
   `strikes` int NOT NULL DEFAULT '0',
-  `reminder_time` enum('US','EU') NOT NULL,
+  `reminder_time` enum('NA','EU','ASIA') NOT NULL,
   `needs_update` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `tag` (`tag`),

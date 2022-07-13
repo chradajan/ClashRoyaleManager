@@ -161,16 +161,17 @@ async def unregister_all_members(interaction: discord.Interaction):
 
 
 @app_commands.command()
-@app_commands.describe(reminder_time="When you would prefer to be pinged. EU = 19:00 UTC, US = 02:00 UTC")
+@app_commands.describe(reminder_time="When you would prefer to be pinged. ASIA = 13:30 UTC, EU = 19:00 UTC, US = 02:00 UTC")
 @app_commands.choices(reminder_time=[
-    app_commands.Choice(name="US", value="US"),
-    app_commands.Choice(name="EU", value="EU")
+    app_commands.Choice(name="NA", value="NA"),
+    app_commands.Choice(name="EU", value="EU"),
+    app_commands.Choice(name="ASIA", value="ASIA")
 ])
 async def set_reminder_time(interaction: discord.Interaction, reminder_time: app_commands.Choice[str]):
     """Change when you get pinged for Battle Day reminders."""
     LOG.command_start(interaction, reminder_time=reminder_time)
     reminder_time = ReminderTime(reminder_time.value)
-    success = db_utils.set_reminder_time(interaction.user.id, reminder_time)
+    db_utils.set_reminder_time(interaction.user.id, reminder_time)
 
     embed = discord.Embed(title="Update successful!",
                             description=f"You will now get pinged for automated {reminder_time.value} reminders.",

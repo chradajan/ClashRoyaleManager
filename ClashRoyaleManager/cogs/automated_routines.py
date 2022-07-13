@@ -176,17 +176,17 @@ class AutomatedRoutines(commands.Cog):
             LOG.automation_end()
 
 
-        @aiocron.crontab('0 2 * * 5,6,0,1')
-        async def automated_reminder_us():
-            """Send a reminder for all clans with reminders enabled. Mention users with a US reminder time preference."""
-            LOG.automation_start("Sending US reminders")
+        @aiocron.crontab('30 13 * * 4,5,6,0')
+        async def automated_reminder_asia():
+            """Send a reminder for all clans with reminders enabled. Mention users with an ASIA reminder time preference."""
+            LOG.automation_start("Sending ASIA reminders")
             primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
             for tag, clan in primary_clans.items():
                 if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
                     LOG.info(f"Sending reminder for {tag}")
                     channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
-                    await discord_utils.send_reminder(tag, channel, ReminderTime.US, True)
+                    await discord_utils.send_reminder(tag, channel, ReminderTime.ASIA, True)
 
             LOG.automation_end()
 
@@ -202,6 +202,21 @@ class AutomatedRoutines(commands.Cog):
                     LOG.info(f"Sending reminder for {tag}")
                     channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
                     await discord_utils.send_reminder(tag, channel, ReminderTime.EU, True)
+
+            LOG.automation_end()
+
+
+        @aiocron.crontab('0 2 * * 5,6,0,1')
+        async def automated_reminder_na():
+            """Send a reminder for all clans with reminders enabled. Mention users with a NA reminder time preference."""
+            LOG.automation_start("Sending NA reminders")
+            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+
+            for tag, clan in primary_clans.items():
+                if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
+                    LOG.info(f"Sending reminder for {tag}")
+                    channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
+                    await discord_utils.send_reminder(tag, channel, ReminderTime.NA, True)
 
             LOG.automation_end()
 

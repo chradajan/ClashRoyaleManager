@@ -19,8 +19,9 @@ DecksRemaining = int
 
 class ReminderTime(Enum):
     """Valid times to receive automated reminders."""
-    US = "US"
+    NA = "NA"
     EU = "EU"
+    ASIA = "ASIA"
     ALL = "ALL"
 
 

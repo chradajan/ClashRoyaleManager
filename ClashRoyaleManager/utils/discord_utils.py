@@ -198,16 +198,10 @@ async def send_reminder(tag: str, channel: discord.TextChannel, reminder_time: R
         message += users_to_remind
 
         if automated:
-            if reminder_time == ReminderTime.US:
-                embed = discord.Embed(title="This is an automated reminder",
-                                      description=("Any Discord users that have their reminder time preference set to `US` were "
-                                                   "pinged. If you were pinged but would like to to be mentioned in the earlier "
-                                                   "reminder, use the `/set_reminder_time` command and choose `EU`."))
-            else:
-                embed = discord.Embed(title="This is an automated reminder",
-                                      description=("Any Discord users that have their reminder time preference set to `EU` were "
-                                                   "pinged. If you were pinged but would like to to be mentioned in the later "
-                                                   "reminder, use the `/set_reminder_time` command and choose `US`."))
+            embed = discord.Embed(title="This is an automated reminder",
+                                  description=(f"Any Discord users that have their reminder time set to `{reminder_time.value}` "
+                                               "were pinged. If you were pinged but would like to be reminded at a different time, "
+                                               "use the `/set_reminder_time` command to update your preferences."))
     else:
         if reminder_time == ReminderTime.ALL:
             message = f"All members of {discord.utils.escape_markdown(clan_name)} have already used all their decks today."
