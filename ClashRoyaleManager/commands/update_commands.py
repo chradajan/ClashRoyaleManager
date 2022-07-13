@@ -46,7 +46,7 @@ async def register(interaction: discord.Interaction, tag: str):
 
                 LOG.info("User successfully registered")
                 new_member_embed = discord_utils.create_card_levels_embed(clash_data)
-                await CHANNEL[SpecialChannel.AdminOnly].send(embed=new_member_embed)
+                await CHANNEL[SpecialChannel.NewMemberInfo].send(embed=new_member_embed)
                 embed = discord.Embed(title="Registration successful!",
                                       description=f"You have been registered as {clash_data['name']}.",
                                       color=discord.Color.green())

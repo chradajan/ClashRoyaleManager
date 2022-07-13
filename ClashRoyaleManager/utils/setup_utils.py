@@ -194,13 +194,17 @@ def is_primary_clan_set() -> bool:
     return query_result is not None
 
 
-def finish_setup():
+def finish_setup(season: int):
     """Create season entry and create River Race data for all primary clans.
+
+    Args:
+        season: Current Clash Royale season.
 
     Raises:
         GeneralAPIError: Something went wrong with the request.
     """
     database, cursor = db_utils.get_database_connection()
+    cursor.execute("ALTER TABLE seasons AUTO_INCREMENT = %s", (season))
     cursor.execute("INSERT INTO seasons VALUES (DEFAULT, DEFAULT)")
     database.commit()
 

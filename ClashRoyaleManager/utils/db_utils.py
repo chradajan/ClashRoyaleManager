@@ -1266,7 +1266,7 @@ def create_new_season():
 
 
 def prepare_for_river_race(tag: str):
-    """Insert a new river_race entry for the specified clan, along with a new set of five river_race_clans entries.
+    """Insert a new river_race entry for the specified clan.
 
     Args:
         tag: Tag of clan to create entries for.

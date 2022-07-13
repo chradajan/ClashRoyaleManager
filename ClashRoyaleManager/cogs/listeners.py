@@ -33,7 +33,12 @@ class EventsManager(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Check for kick screenshots."""
-        if message.attachments and (message.channel == CHANNEL[SpecialChannel.AdminOnly]) and not message.author.bot:
+        if message.channel == CHANNEL[SpecialChannel.Rules] and not message.author.guild_permissions.administrator:
+            try:
+                await message.delete()
+            except Exception as e:
+                LOG.exception(e)
+        elif message.attachments and (message.channel == CHANNEL[SpecialChannel.Kicks]) and not message.author.bot:
             for attachment in message.attachments:
                 if attachment.content_type in {'image/png', 'image/jpeg'}:
                     tag, name = await kick_utils.get_player_info_from_image(attachment)

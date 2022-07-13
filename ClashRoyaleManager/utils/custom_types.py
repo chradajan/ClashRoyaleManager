@@ -37,13 +37,14 @@ class SpecialRole(Enum):
     """Enum of relevant Discord roles that are not clan roles."""
     New = "new"
     Visitor = "visitor"
-    Admin = "admin"
 
 
 class SpecialChannel(Enum):
     """Enum of relevant Discord channels."""
+    Kicks = "kicks"
+    NewMemberInfo = "new_member_info"
+    Rules = "rules"
     Strikes = "strikes"
-    AdminOnly = "admin_only"
 
 
 class StrikeType(Enum):

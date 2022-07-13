@@ -18,7 +18,7 @@ async def register_clan_role(interaction: discord.Interaction, clan_role: ClanRo
     """Register a role for users to receive based on their in-game clan role."""
     setup_utils.set_clan_role(clan_role, discord_role)
     embed = discord.Embed(title=(f"Users that are {clan_role.value}s in their respective clans "
-                                    f"will now receive the {discord_role} role."),
+                                 f"will now receive the {discord_role} role."),
                             color=discord.Color.green())
     await interaction.response.send_message(embed=embed)
 
@@ -28,18 +28,15 @@ async def register_clan_role(interaction: discord.Interaction, clan_role: ClanRo
 @app_commands.describe(special_status="Special status to associate with a Discord role")
 @app_commands.describe(discord_role="Discord role to give based on a user's special status")
 async def register_special_role(interaction: discord.Interaction, special_status: SpecialRole, discord_role: discord.Role):
-    """Register a role for New members, Visitors, and Admins."""
+    """Register a role for New members and Visitors."""
     setup_utils.set_special_role(special_status, discord_role)
 
     if special_status == SpecialRole.Visitor:
         embed = discord.Embed(title=("Users that are not a member of any of the primary clans "
-                                        f"will now receive the {discord_role} role."),
+                                     f"will now receive the {discord_role} role."),
                                 color=discord.Color.green())
     elif special_status == SpecialRole.New:
         embed = discord.Embed(title=f"Users will now receive the {discord_role} role upon joining the server.",
-                                color=discord.Color.green())
-    elif special_status == SpecialRole.Admin:
-        embed = discord.Embed(title=f"Users with the {discord_role} role will now be granted access to privileged commands.",
                                 color=discord.Color.green())
     else:
         embed = discord.Embed(title="Received invalid status. No changes have been made.", color=discord.Color.red())
@@ -49,28 +46,34 @@ async def register_special_role(interaction: discord.Interaction, special_status
 
 @app_commands.command()
 @app_commands.checks.has_permissions(administrator=True)
-@app_commands.describe(channel_purpose="Whether this channel is for strike notifications or admin notifications")
+@app_commands.describe(channel_purpose="Whether this channel is for kicks, new member info, rules, or strikes")
 @app_commands.describe(channel="Discord text channel where notifications regarding the specified purpose will be sent")
 async def register_special_channel(interaction: discord.Interaction,
                                    channel_purpose: SpecialChannel,
                                    channel: discord.TextChannel):
-    """Set text channel for strike and admin notification messages to be sent to."""
+    """Set text channels used for Kicks, New Member Info, Rules, and Strikes."""
     if interaction.client.user not in channel.members:
         embed = discord.Embed(title=f"ClashRoyaleManager needs to be a member of #{channel} in order to send messages.",
-                                description="Either add ClashRoyaleManager to the channel or choose a different channel.",
-                                color=discord.Color.red())
+                              description="Either add ClashRoyaleManager to the channel or choose a different channel.",
+                              color=discord.Color.red())
     elif not channel.permissions_for(channel.guild.me).send_messages:
         embed = discord.Embed(title=f"ClashRoyaleManager does not have permission to send messages in #{channel}",
-                                description=("Either give ClashRoyaleManager permission to send messages there "
-                                            "or choose a different channel."),
-                                color=discord.Color.red())
+                              description=("Either give ClashRoyaleManager permission to send messages there "
+                                           "or choose a different channel."),
+                              color=discord.Color.red())
     else:
         setup_utils.set_special_channel(channel_purpose, channel)
 
-        if channel_purpose == SpecialChannel.Strikes:
+        if channel_purpose == SpecialChannel.Kicks:
+            embed = discord.Embed(title=f"Kick screenshots can now be posted in #{channel}", color=discord.Color.green())
+        elif channel_purpose == SpecialChannel.NewMemberInfo:
+            embed = discord.Embed(title=f"Stats about newly registered members will now be sent to #{channel}",
+                                  color=discord.Color.green())
+        elif channel_purpose == SpecialChannel.Rules:
+            embed = discord.Embed(title=f"New members should now register in #{channel}. Non-admin messages there will be deleted.",
+                                  color=discord.Color.green())
+        elif channel_purpose == SpecialChannel.Strikes:
             embed = discord.Embed(title=f"Strike notifications will now be sent to #{channel}", color=discord.Color.green())
-        elif channel_purpose == SpecialChannel.AdminOnly:
-            embed = discord.Embed(title=f"Privileged messages will now be sent to #{channel}", color=discord.Color.green())
         else:
             embed = discord.Embed(title="Received invalid channel type. No changes have been made.", color=discord.Color.red())
 
@@ -112,15 +115,15 @@ async def register_primary_clan(interaction: discord.Interaction,
                                                 strike_type,
                                                 strike_threshold)
             embed = discord.Embed(title=f"{name} has been successfully registered as a primary clan.",
-                                    color=discord.Color.green())
+                                  color=discord.Color.green())
         except GeneralAPIError:
             embed = discord.Embed(title="The Clash Royale API is currently inaccessible.",
-                                    description="Please try again later.",
-                                    color = discord.Color.red())
+                                  description="Please try again later.",
+                                  color = discord.Color.red())
         except ResourceNotFound:
             embed = discord.Embed(title="The tag you entered does not exist.",
-                                    description="Please enter a valid clan tag.",
-                                    color=discord.Color.red())
+                                  description="Please enter a valid clan tag.",
+                                  color=discord.Color.red())
 
     await interaction.response.send_message(embed=embed)
 
@@ -139,8 +142,8 @@ async def unregister_primary_clan(interaction: discord.Interaction, tag: str):
 
         if name is None:
             embed = discord.Embed(title="The tag you entered did not match that of any primary clans.",
-                                    description="No changes have been made.",
-                                    color=discord.Color.red())
+                                  description="No changes have been made.",
+                                  color=discord.Color.red())
         else:
             embed = discord.Embed(title=f"{name} is no longer designated as a primary clan.", color=discord.Color.green())
 
@@ -149,7 +152,8 @@ async def unregister_primary_clan(interaction: discord.Interaction, tag: str):
 
 @app_commands.command()
 @app_commands.checks.has_permissions(administrator=True)
-async def finish_setup(interaction: discord.Interaction):
+@app_commands.describe(season="Current Clash Royale season")
+async def finish_setup(interaction: discord.Interaction, season: int):
     """Once all roles and primary clans are set, use this command to complete the setup process."""
     unset_clan_roles = setup_utils.get_unset_clan_roles()
     unset_special_roles = setup_utils.get_unset_special_roles()
@@ -158,27 +162,27 @@ async def finish_setup(interaction: discord.Interaction):
 
     if unset_clan_roles:
         embed = discord.Embed(title="Cannot complete setup yet. The following clan roles do not have Discord roles:",
-                                description="```" + ", ".join(role.name for role in unset_clan_roles) + "```",
-                                color=discord.Color.red())
+                              description="```" + ", ".join(role.name for role in unset_clan_roles) + "```",
+                              color=discord.Color.red())
     elif unset_special_roles:
         embed = discord.Embed(title="Cannot complete setup yet. The following special roles do not have Discord roles:",
-                                description="```" + ", ".join(role.name for role in unset_special_roles) + "```",
-                                color=discord.Color.red())
+                              description="```" + ", ".join(role.name for role in unset_special_roles) + "```",
+                              color=discord.Color.red())
     elif unset_special_channels:
         embed = discord.Embed(title="Cannot complete setup yet. The following special channels are not set:",
-                                description="```" + ", ".join(channel.name for channel in unset_special_channels) + "```",
-                                color=discord.Color.red())
+                              description="```" + ", ".join(channel.name for channel in unset_special_channels) + "```",
+                              color=discord.Color.red())
     elif not is_primary_clan_set:
         embed = discord.Embed(title="Cannot complete setup yet. There must be at least one primary clan.",
-                                color=discord.Color.red())
+                              color=discord.Color.red())
     else:
         try:
-            setup_utils.finish_setup()
+            setup_utils.finish_setup(season)
             embed = discord.Embed(title="Setup complete. The bot must now be restarted.", color=discord.Color.green())
         except GeneralAPIError:
             embed = discord.Embed(title="The Clash Royale API is currently inaccessible.",
-                                    description="Please try again later.",
-                                    color = discord.Color.red())
+                                  description="Please try again later.",
+                                  color = discord.Color.red())
 
     await interaction.response.send_message(embed=embed)
 
@@ -189,7 +193,7 @@ async def finish_setup(interaction: discord.Interaction):
 @register_primary_clan.error
 @unregister_primary_clan.error
 @finish_setup.error
-async def setup_commands_error_hander(interaction: discord.Interaction, error: app_commands.AppCommandError):
+async def setup_commands_error_handler(interaction: discord.Interaction, error: app_commands.AppCommandError):
     """Error handler for setup commands."""
     if isinstance(error, app_commands.CheckFailure):
         embed = discord.Embed(title="You do not have permission to use this command.", color=discord.Color.red())

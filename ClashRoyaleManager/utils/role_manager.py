@@ -60,13 +60,12 @@ class RoleManager:
 
 
     def get_all_roles(self) -> Set[discord.Role]:
-        """Get all clan roles, special roles, and primary clan roles. Does not include Admin role.
+        """Get all clan roles, special roles, and primary clan roles.
 
         Returns:
             Set of relevant roles.
         """
         role_set = {role for role in self.roles.values()}
-        role_set.remove(self.roles[SpecialRole.Admin])
         primary_clans = db_utils.get_primary_clans()
 
         for clan in primary_clans:
