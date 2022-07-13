@@ -550,7 +550,8 @@ def get_all_clan_affiliations() -> List[Tuple[str, str, str, ClanRole]]:
     for user in cursor:
         clan_affiliations.append((user["player_tag"], user["name"], user["clan_tag"], ClanRole(user["role"])))
 
-    cursor.execute("SELECT tag, name FROM users WHERE id NOT IN (SELECT user_id FROM clan_affiliations)")
+    cursor.execute("SELECT tag, name FROM users WHERE id NOT IN (SELECT users.id FROM users INNER JOIN clan_affiliations ON\
+                    users.id = clan_affiliations.user_id WHERE clan_affiliations.role IS NOT NULL)")
 
     for user in cursor:
         clan_affiliations.append((user["tag"], user["name"], None, None))
