@@ -986,7 +986,12 @@ def prepare_for_battle_days(tag: str):
     river_race_id, clan_id, _, _ = get_clan_river_race_ids(tag)
     current_time = set_last_check(tag)
     set_battle_time(tag)
-    add_unregistered_users(tag)
+
+    try:
+        add_unregistered_users(tag)
+    except GeneralAPIError:
+        LOG.warning(f"Unable to add unregistered users while preparing for battle days")
+
     database, cursor = get_database_connection()
     cursor.execute("UPDATE river_race_user_data SET last_check = %s WHERE river_race_id = %s", (current_time, river_race_id))
     cursor.execute("UPDATE river_race_user_data SET tracked_since = %s WHERE river_race_id = %s AND\
@@ -1259,6 +1264,7 @@ def update_current_season_river_race_clans(updated_data: List[DatabaseRiverRaceC
 
 def create_new_season():
     """Create a new season index."""
+    LOG.info("Creating new season")
     database, cursor = get_database_connection()
     cursor.execute("INSERT INTO seasons VALUES (DEFAULT, DEFAULT)")
     database.commit()
@@ -1271,6 +1277,7 @@ def prepare_for_river_race(tag: str):
     Args:
         tag: Tag of clan to create entries for.
     """
+    LOG.info(f"Creating new river race entry for {tag}")
     database, cursor = get_database_connection()
     cursor.execute("SELECT id FROM clans WHERE tag = %s", (tag))
     clan_id = cursor.fetchone()["id"]

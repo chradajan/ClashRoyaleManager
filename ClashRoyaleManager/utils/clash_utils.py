@@ -259,8 +259,8 @@ def get_current_river_race_info(tag: str) -> RiverRaceInfo:
         "start_time": last_race_end_time,
         "colosseum_week": is_colosseum_week(),
         "completed_saturday": (race_info["periodIndex"] % 7 == 6
-                                and race_info["clan"]["fame"] >= 10000
-                                and race_info["periodType"].lower() != "colosseum"),
+                               and race_info["clan"]["fame"] >= 10000
+                               and race_info["periodType"].lower() != "colosseum"),
         "week": (race_info["periodIndex"] // 7) + 1,
         "clans": [(clan["tag"], clan["name"]) for clan in race_info["clans"]]
     }

@@ -38,35 +38,83 @@ class AutomatedRoutines(commands.Cog):
         @aiocron.crontab('20-58 9 * * *')
         async def reset_time_check():
             """Check for the daily reset."""
-            tags = [tag for tag, reset_occurred in AutomatedRoutines.RESET_OCCURRED.items() if not reset_occurred]
+            try:
+                tags = [tag for tag, reset_occurred in AutomatedRoutines.RESET_OCCURRED.items() if not reset_occurred]
 
-            if not tags:
-                return
+                if not tags:
+                    return
 
-            LOG.automation_start("Checking reset time")
-            weekday = datetime.datetime.utcnow().weekday()
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+                LOG.automation_start("Checking reset time")
+                weekday = datetime.datetime.utcnow().weekday()
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag in tags:
-                try:
-                    deck_usage = clash_utils.get_deck_usage_today(tag)
-                except GeneralAPIError:
-                    LOG.warning(f"Skipping reset time check for {tag}")
-                    continue
+                for tag in tags:
+                    try:
+                        deck_usage = clash_utils.get_deck_usage_today(tag)
+                    except GeneralAPIError:
+                        LOG.warning(f"Skipping reset time check for {tag}")
+                        continue
 
-                usage_sum = sum(deck_usage.values())
+                    usage_sum = sum(deck_usage.values())
 
-                if usage_sum < AutomatedRoutines.LAST_CHECK_SUM[tag]:
-                    LOG.info(f"Daily reset detected for clan {tag}")
+                    if usage_sum < AutomatedRoutines.LAST_CHECK_SUM[tag]:
+                        LOG.info(f"Daily reset detected for clan {tag}")
+
+                        try:
+                            db_utils.clean_up_database()
+                        except GeneralAPIError:
+                            LOG.warning("Error occurred while cleaning up database")
+                            AutomatedRoutines.LAST_CHECK_SUM[tag] = 201
+                            continue
+
+                        AutomatedRoutines.RESET_OCCURRED[tag] = True
+
+                        if weekday == 3:
+                            db_utils.prepare_for_battle_days(tag)
+                        elif weekday in {4, 5, 6} and primary_clans[tag]["track_stats"]:
+                            stat_utils.update_clan_battle_day_stats(tag, False)
+                            stat_utils.save_river_race_clans_info(tag, False)
+
+                        db_utils.record_deck_usage_today(tag, weekday, AutomatedRoutines.LAST_DECK_USAGE[tag])
+                    else:
+                        AutomatedRoutines.LAST_CHECK_SUM[tag] = usage_sum
+                        AutomatedRoutines.LAST_DECK_USAGE[tag] = deck_usage
+
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
+
+
+        @aiocron.crontab('59 9 * * *')
+        async def final_reset_time_check():
+            """Perform daily reset routine if not already performed and reset tracking variables."""
+            try:
+                LOG.automation_start("Final reset time check")
+
+                tags = [tag for tag, reset_occurred in AutomatedRoutines.RESET_OCCURRED.items() if not reset_occurred]
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+
+                if tags:
+                    weekday = datetime.datetime.utcnow().weekday()
 
                     try:
                         db_utils.clean_up_database()
                     except GeneralAPIError:
                         LOG.warning("Error occurred while cleaning up database")
-                        AutomatedRoutines.LAST_CHECK_SUM[tag] = 201
+
+                for tag in tags:
+                    LOG.warning(f"Daily reset not detected for clan {tag}")
+
+                    try:
+                        deck_usage = clash_utils.get_deck_usage_today(tag)
+                    except GeneralAPIError:
+                        LOG.warning(f"Skipping final reset time check for {tag}")
                         continue
 
-                    AutomatedRoutines.RESET_OCCURRED[tag] = True
+                    usage_sum = sum(deck_usage.values())
+
+                    if usage_sum > AutomatedRoutines.LAST_CHECK_SUM[tag]:
+                        deck_usage = AutomatedRoutines.LAST_DECK_USAGE[tag]
 
                     if weekday == 3:
                         db_utils.prepare_for_battle_days(tag)
@@ -74,263 +122,248 @@ class AutomatedRoutines(commands.Cog):
                         stat_utils.update_clan_battle_day_stats(tag, False)
                         stat_utils.save_river_race_clans_info(tag, False)
 
-                    db_utils.record_deck_usage_today(tag, weekday, AutomatedRoutines.LAST_DECK_USAGE[tag])
-                else:
-                    AutomatedRoutines.LAST_CHECK_SUM[tag] = usage_sum
-                    AutomatedRoutines.LAST_DECK_USAGE[tag] = deck_usage
+                    db_utils.record_deck_usage_today(tag, weekday, deck_usage)
 
-            LOG.automation_end()
+                for tag in primary_clans:
+                    AutomatedRoutines.RESET_OCCURRED[tag] = False
+                    AutomatedRoutines.LAST_CHECK_SUM[tag] = -1
+                    AutomatedRoutines.LAST_DECK_USAGE[tag] = {}
 
-
-        @aiocron.crontab('59 9 * * *')
-        async def final_reset_time_check():
-            """Perform daily reset routine if not already performed and reset tracking variables."""
-            LOG.automation_start("Final reset time check")
-
-            tags = [tag for tag, reset_occurred in AutomatedRoutines.RESET_OCCURRED.items() if not reset_occurred]
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
-
-            if tags:
-                weekday = datetime.datetime.utcnow().weekday()
-
-                try:
-                    db_utils.clean_up_database()
-                except GeneralAPIError:
-                    LOG.warning("Error occurred while cleaning up database")
-
-            for tag in tags:
-                LOG.warning(f"Daily reset not detected for clan {tag}")
-
-                try:
-                    deck_usage = clash_utils.get_deck_usage_today(tag)
-                except GeneralAPIError:
-                    LOG.warning(f"Skipping final reset time check for {tag}")
-                    continue
-
-                usage_sum = sum(deck_usage.values())
-
-                if usage_sum > AutomatedRoutines.LAST_CHECK_SUM[tag]:
-                    deck_usage = AutomatedRoutines.LAST_DECK_USAGE[tag]
-
-                if weekday == 3:
-                    db_utils.prepare_for_battle_days(tag)
-                elif weekday in {4, 5, 6} and primary_clans[tag]["track_stats"]:
-                    stat_utils.update_clan_battle_day_stats(tag, False)
-                    stat_utils.save_river_race_clans_info(tag, False)
-
-                db_utils.record_deck_usage_today(tag, weekday, deck_usage)
-
-            for tag in primary_clans:
-                AutomatedRoutines.RESET_OCCURRED[tag] = False
-                AutomatedRoutines.LAST_CHECK_SUM[tag] = -1
-                AutomatedRoutines.LAST_DECK_USAGE[tag] = {}
-
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('0 10 * * 1')
         async def end_of_race_check():
             """Perform final stats checks after River Race and create new River Race entries."""
-            LOG.automation_start("Starting end of race checks")
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            try:
+                LOG.automation_start("Starting end of race checks")
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag, clan in primary_clans.items():
-                if clan["track_stats"]:
-                    stat_utils.update_clan_battle_day_stats(tag, True)
-                    stat_utils.save_river_race_clans_info(tag, True)
+                for tag, clan in primary_clans.items():
+                    if clan["track_stats"]:
+                        stat_utils.update_clan_battle_day_stats(tag, True)
+                        stat_utils.save_river_race_clans_info(tag, True)
 
-            if clash_utils.is_first_day_of_season():
-                db_utils.create_new_season()
+                if clash_utils.is_first_day_of_season():
+                    db_utils.create_new_season()
 
-            for tag in primary_clans:
-                db_utils.prepare_for_river_race(tag)
+                for tag in primary_clans:
+                    db_utils.prepare_for_river_race(tag)
 
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('0 10-23 * * 4,5,6,0')
         async def evening_stats_checker():
             """Check Battle Day stats hourly."""
-            LOG.automation_start("Starting evening Battle Day stats check")
-            db_utils.clean_up_database()
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            try:
+                LOG.automation_start("Starting evening Battle Day stats check")
+                db_utils.clean_up_database()
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag, clan in primary_clans.items():
-                if clan["track_stats"]:
-                    stat_utils.update_clan_battle_day_stats(tag, False)
+                for tag, clan in primary_clans.items():
+                    if clan["track_stats"]:
+                        stat_utils.update_clan_battle_day_stats(tag, False)
 
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('0 0-9 * * 5,6,0,1')
         async def morning_stats_checker():
             """Check Battle Day stats hourly."""
-            LOG.automation_start("Starting morning Battle Day stats check")
-            db_utils.clean_up_database()
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            try:
+                LOG.automation_start("Starting morning Battle Day stats check")
+                db_utils.clean_up_database()
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag, clan in primary_clans.items():
-                if clan["track_stats"]:
-                    stat_utils.update_clan_battle_day_stats(tag, False)
+                for tag, clan in primary_clans.items():
+                    if clan["track_stats"]:
+                        stat_utils.update_clan_battle_day_stats(tag, False)
 
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('30 13 * * 4,5,6,0')
         async def automated_reminder_asia():
             """Send a reminder for all clans with reminders enabled. Mention users with an ASIA reminder time preference."""
-            LOG.automation_start("Sending ASIA reminders")
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            try:
+                LOG.automation_start("Sending ASIA reminders")
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag, clan in primary_clans.items():
-                if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
-                    LOG.info(f"Sending reminder for {tag}")
-                    channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
-                    await discord_utils.send_reminder(tag, channel, ReminderTime.ASIA, True)
+                for tag, clan in primary_clans.items():
+                    if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
+                        LOG.info(f"Sending reminder for {tag}")
+                        channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
+                        await discord_utils.send_reminder(tag, channel, ReminderTime.ASIA, True)
 
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('0 19 * * 4,5,6,0')
         async def automated_reminder_eu():
             """Send a reminder for all clans with reminders enabled. Mention users with an EU reminder time preference."""
-            LOG.automation_start("Sending EU reminders")
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            try:
+                LOG.automation_start("Sending EU reminders")
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag, clan in primary_clans.items():
-                if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
-                    LOG.info(f"Sending reminder for {tag}")
-                    channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
-                    await discord_utils.send_reminder(tag, channel, ReminderTime.EU, True)
+                for tag, clan in primary_clans.items():
+                    if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
+                        LOG.info(f"Sending reminder for {tag}")
+                        channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
+                        await discord_utils.send_reminder(tag, channel, ReminderTime.EU, True)
 
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('0 2 * * 5,6,0,1')
         async def automated_reminder_na():
             """Send a reminder for all clans with reminders enabled. Mention users with a NA reminder time preference."""
-            LOG.automation_start("Sending NA reminders")
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            try:
+                LOG.automation_start("Sending NA reminders")
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag, clan in primary_clans.items():
-                if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
-                    LOG.info(f"Sending reminder for {tag}")
-                    channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
-                    await discord_utils.send_reminder(tag, channel, ReminderTime.NA, True)
+                for tag, clan in primary_clans.items():
+                    if clan["send_reminders"] and not db_utils.is_completed_saturday(tag):
+                        LOG.info(f"Sending reminder for {tag}")
+                        channel = AutomatedRoutines.GUILD.get_channel(clan["discord_channel_id"])
+                        await discord_utils.send_reminder(tag, channel, ReminderTime.NA, True)
 
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('30 7,15,23 * * *')
         async def update_all_members():
             """Update all members of the Discord server."""
-            LOG.automation_start("Updating all Discord members")
-            await discord_utils.update_all_members(AutomatedRoutines.GUILD)
-            LOG.automation_end()
+            try:
+                LOG.automation_start("Updating all Discord members")
+                await discord_utils.update_all_members(AutomatedRoutines.GUILD)
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('0 10 * * 0')
         async def check_early_completion_status():
             """Check if each clan has crossed the finish line early."""
-            LOG.automation_start("Starting early finish checks")
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            try:
+                LOG.automation_start("Starting early finish checks")
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag in primary_clans:
-                race_info = clash_utils.get_current_river_race_info(tag)
-                db_utils.set_completed_saturday(tag, race_info["completed_saturday"])
+                for tag in primary_clans:
+                    race_info = clash_utils.get_current_river_race_info(tag)
+                    db_utils.set_completed_saturday(tag, race_info["completed_saturday"])
 
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
 
 
         @aiocron.crontab('0 18 * * 1')
         async def assign_strikes():
             """Assign automated strikes based on performance in most recent River Race."""
-            LOG.automation_start("Assigning automated strikes")
-            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            try:
+                LOG.automation_start("Assigning automated strikes")
+                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-            for tag, clan in primary_clans.items():
-                if not clan["assign_strikes"]:
-                    continue
+                for tag, clan in primary_clans.items():
+                    if not clan["assign_strikes"]:
+                        continue
 
-                LOG.info(f"Determining strikes for members of {tag}")
+                    LOG.info(f"Determining strikes for members of {tag}")
 
-                try:
-                    active_members = clash_utils.get_active_members_in_clan(tag)
-                except GeneralAPIError:
-                    LOG.warning(f"Could not get active members of {tag} for determining strikes")
-                    continue
+                    try:
+                        active_members = clash_utils.get_active_members_in_clan(tag)
+                    except GeneralAPIError:
+                        LOG.warning(f"Could not get active members of {tag} for determining strikes")
+                        continue
 
-                participation_data = db_utils.get_strike_determination_data(tag)
-                channel = CHANNEL[SpecialChannel.Strikes]
-                message = ""
-                mentions = ""
+                    participation_data = db_utils.get_strike_determination_data(tag)
+                    channel = CHANNEL[SpecialChannel.Strikes]
+                    message = ""
+                    mentions = ""
 
-                if participation_data["strike_type"] == StrikeType.Decks:
-                    message = (f"**The following members of {discord.utils.escape_markdown(clan['name'])} did not meet the minimum "
-                               f"requirement of {participation_data['strike_threshold']} decks used per Battle Day and have "
-                               "received a strike:\n**")
-                elif participation_data["strike_type"] == StrikeType.Medals:
-                    message = (f"**The following members of {discord.utils.escape_markdown(clan['name'])} did not meet the minimum "
-                               f"requirement of {participation_data['strike_threshold']} medals and have received a strike:\n")
+                    if participation_data["strike_type"] == StrikeType.Decks:
+                        message = (f"**The following members of {discord.utils.escape_markdown(clan['name'])} did not meet the minimum "
+                                   f"requirement of {participation_data['strike_threshold']} decks used per Battle Day and have "
+                                   "received a strike:\n**")
+                    elif participation_data["strike_type"] == StrikeType.Medals:
+                        message = (f"**The following members of {discord.utils.escape_markdown(clan['name'])} did not meet the minimum "
+                                   f"requirement of {participation_data['strike_threshold']} medals and have received a strike:\n")
 
-                embed_one = discord.Embed()
-                embed_two = discord.Embed()
-                field_count = 0
+                    embed_one = discord.Embed()
+                    embed_two = discord.Embed()
+                    field_count = 0
 
-                for player_tag, user_data in participation_data["users"].items():
-                    should_receive_strike, actual, required = stat_utils.should_receive_strike(participation_data, player_tag)
+                    for player_tag, user_data in participation_data["users"].items():
+                        should_receive_strike, actual, required = stat_utils.should_receive_strike(participation_data, player_tag)
 
-                    if should_receive_strike:
-                        if player_tag in active_members:
-                            key = user_data["discord_id"] or player_tag
-                            previous_strikes, updated_strikes = db_utils.update_strikes(key, 1)
+                        if should_receive_strike:
+                            if player_tag in active_members:
+                                key = user_data["discord_id"] or player_tag
+                                previous_strikes, updated_strikes = db_utils.update_strikes(key, 1)
 
-                            if previous_strikes is None:
-                                LOG.warning(f"Unable to assign strikes to {player_tag} for clan {tag}")
+                                if previous_strikes is None:
+                                    LOG.warning(f"Unable to assign strikes to {player_tag} for clan {tag}")
+                                    continue
+
+                                if user_data["discord_id"] is not None:
+                                    member = discord.utils.get(channel.members, id=user_data["discord_id"])
+
+                                    if member is not None:
+                                        mentions += member.mention + " "
+
+                                if participation_data["strike_type"] == StrikeType.Medals:
+                                    strike_field = (
+                                        f"```Strikes: {previous_strikes} -> {updated_strikes}\n"
+                                        f"Medals: {actual}/{int(required)}\n"
+                                        f"Date: {user_data['tracked_since'].strftime('%a, %b %d %H:%M UTC')}```"
+                                    )
+                                elif participation_data["strike_type"] == StrikeType.Decks:
+                                    for i, decks_used in enumerate(user_data["deck_usage"]):
+                                        if decks_used is None:
+                                            user_data["deck_usage"][i] = '-'
+
+                                    strike_field = (
+                                        f"```Strikes: {previous_strikes} -> {updated_strikes}\n"
+                                        f"Thu: {user_data['deck_usage'][0]}, Fri: {user_data['deck_usage'][1]}, "
+                                        f"Sat: {user_data['deck_usage'][2]}, Sun: {user_data['deck_usage'][3]}\n"
+                                        f"Date: {user_data['tracked_since'].strftime('%a, %b %d %H:%M UTC')}```"
+                                    )
+
+                                if field_count < 25:
+                                    embed_one.add_field(name=discord.utils.escape_markdown(user_data["name"]),
+                                                        value=strike_field,
+                                                        inline=False)
+                                else:
+                                    embed_two.add_field(name=discord.utils.escape_markdown(user_data["name"]),
+                                                        value=strike_field,
+                                                        inline=False)
+
+                                field_count += 1
+                            else:
+                                # TODO: Take note of non-active members that participated but did not meet participation requirements.
                                 continue
 
-                            if user_data["discord_id"] is not None:
-                                member = discord.utils.get(channel.members, id=user_data["discord_id"])
+                    message += mentions
+                    await channel.send(content=message, embed=embed_one)
 
-                                if member is not None:
-                                    mentions += member.mention + " "
+                    if field_count > 25:
+                        await channel.send(embed=embed_two)
 
-                            if participation_data["strike_type"] == StrikeType.Medals:
-                                strike_field = (
-                                    f"```Strikes: {previous_strikes} -> {updated_strikes}\n"
-                                    f"Medals: {actual}/{int(required)}\n"
-                                    f"Date: {user_data['tracked_since'].strftime('%a, %b %d %H:%M UTC')}```"
-                                )
-                            elif participation_data["strike_type"] == StrikeType.Decks:
-                                for i, decks_used in enumerate(user_data["deck_usage"]):
-                                    if decks_used is None:
-                                        user_data["deck_usage"][i] = '-'
-
-                                strike_field = (
-                                    f"```Strikes: {previous_strikes} -> {updated_strikes}\n"
-                                    f"Thu: {user_data['deck_usage'][0]}, Fri: {user_data['deck_usage'][1]}, "
-                                    f"Sat: {user_data['deck_usage'][2]}, Sun: {user_data['deck_usage'][3]}\n"
-                                    f"Date: {user_data['tracked_since'].strftime('%a, %b %d %H:%M UTC')}```"
-                                )
-
-                            if field_count < 25:
-                                embed_one.add_field(name=discord.utils.escape_markdown(user_data["name"]),
-                                                    value=strike_field,
-                                                    inline=False)
-                            else:
-                                embed_two.add_field(name=discord.utils.escape_markdown(user_data["name"]),
-                                                    value=strike_field,
-                                                    inline=False)
-
-                            field_count += 1
-                        else:
-                            # TODO: Take note of non-active members that participated but did not meet participation requirements.
-                            continue
-
-                message += mentions
-                await channel.send(content=message, embed=embed_one)
-
-                if field_count > 25:
-                    await channel.send(embed=embed_two)
-
-            LOG.automation_end()
+                LOG.automation_end()
+            except Exception as e:
+                LOG.exception(e)
