@@ -490,8 +490,13 @@ def get_primary_clans() -> List[PrimaryClan]:
 def get_primary_clans_enum() -> Enum:
     database, cursor = get_database_connection()
     cursor.execute("SELECT clans.tag, clans.name FROM clans INNER JOIN primary_clans ON clans.id = primary_clans.clan_id")
+    query_result = cursor.fetchall()
     database.close()
-    return Enum("PrimaryClan", {clan["name"]: clan["tag"] for clan in cursor})
+
+    if not query_result:
+        return Enum("PrimaryClan", {"COMPLETE SETUP": "COMPLETE SETUP"})
+    else:
+        return Enum("PrimaryClan", {clan["name"]: clan["tag"] for clan in cursor})
 
 
 def get_all_discord_users() -> Dict[int, str]:
@@ -533,7 +538,7 @@ def get_clan_affiliation(member: discord.Member) -> Union[Tuple[str, bool, ClanR
     return (query_result["tag"], cursor.fetchone() is not None, ClanRole(query_result["role"]))
 
 
-def get_all_clan_affiliations() -> List[Tuple[str, str, str, ClanRole]]:
+def get_all_clan_affiliations() -> List[Tuple[str, str, Union[str, None], Union[ClanRole, None]]]:
     """Get the clan affiliation of all users in the database.
 
     Returns:
