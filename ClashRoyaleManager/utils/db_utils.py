@@ -494,7 +494,7 @@ def get_primary_clans_enum() -> Enum:
     database.close()
 
     if not query_result:
-        return Enum("PrimaryClan", {"COMPLETE SETUP": "COMPLETE SETUP"})
+        return Enum("PrimaryClan", {"COMPLETE SETUP": "COMPLETE SETUP", "INCOMPLETE": "INCOMPLETE"})
     else:
         return Enum("PrimaryClan", {clan["name"]: clan["tag"] for clan in cursor})
 
