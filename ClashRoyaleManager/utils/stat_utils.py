@@ -353,6 +353,9 @@ def predict_race_outcome(tag: str, historical_win_rates: bool, historical_deck_u
             "completed": current_clan_data["completed"] and not is_colosseum_week
         }
 
+        if predicted_outcome["win_rate"] is None:
+            predicted_outcome["win_rate"] = 0
+
         predicted_outcomes.append(predicted_outcome)
 
     predicted_outcomes.sort(key=lambda x: x["predicted_score"], reverse=True)

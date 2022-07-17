@@ -56,7 +56,12 @@ async def register_special_channel(interaction: discord.Interaction,
         embed = discord.Embed(title=f"ClashRoyaleManager needs to be a member of #{channel} in order to send messages.",
                               description="Either add ClashRoyaleManager to the channel or choose a different channel.",
                               color=discord.Color.red())
-    elif not channel.permissions_for(channel.guild.me).send_messages:
+    elif channel_purpose == SpecialChannel.Rules and not channel.permissions_for(channel.guild.me).manage_messages:
+        embed = discord.Embed(title=f"ClashRoyaleManager requires the `Manage Messages` permission for the selected Rules channel",
+                              description=(f"Either give ClashRoyaleManager permission to manage messages in #{channel} or choose "
+                                           "a different channel."),
+                              color=discord.Color.red())
+    elif channel_purpose != SpecialChannel.Rules and not channel.permissions_for(channel.guild.me).send_messages:
         embed = discord.Embed(title=f"ClashRoyaleManager does not have permission to send messages in #{channel}",
                               description=("Either give ClashRoyaleManager permission to send messages there "
                                            "or choose a different channel."),

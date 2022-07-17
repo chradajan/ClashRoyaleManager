@@ -496,7 +496,7 @@ def get_primary_clans_enum() -> Enum:
     if not query_result:
         return Enum("PrimaryClan", {"COMPLETE SETUP": "COMPLETE SETUP", "INCOMPLETE": "INCOMPLETE"})
     else:
-        return Enum("PrimaryClan", {clan["name"]: clan["tag"] for clan in cursor})
+        return Enum("PrimaryClan", {clan["name"]: clan["tag"] for clan in query_result})
 
 
 def get_all_discord_users() -> Dict[int, str]:

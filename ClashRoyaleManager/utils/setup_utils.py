@@ -209,7 +209,7 @@ def finish_setup(season: int):
     database.commit()
 
     for clan in db_utils.get_primary_clans():
-        db_utils.prepare_for_river_race(clan["tag"], True)
+        db_utils.prepare_for_river_race(clan["tag"])
         db_utils.update_river_race_clans(clan["tag"])
 
     cursor.execute("UPDATE variables SET initialized = TRUE")
