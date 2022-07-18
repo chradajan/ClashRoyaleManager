@@ -1395,19 +1395,16 @@ def time_in_clan(player_tag: str, clans: List[str]) -> datetime.timedelta:
     Returns:
         Time spent in specified clans.
     """
-    if clans:
-        for i, tag in enumerate(clans):
-            clans[i] = "'" + tag + "'"
+    tags = clans.copy()
 
-        clan_tags_str = ", ".join(clans)
-        query = ("SELECT * FROM clan_time WHERE clan_affiliation_id IN ("
-                 "SELECT id FROM clan_affiliations WHERE "
-                 "user_id = (SELECT id FROM users WHERE tag = %s) AND "
-                 f"clan_id IN (SELECT id FROM clans WHERE tag IN ({clan_tags_str})))")
-    else:
-        query = ("SELECT * FROM clan_time WHERE clan_affiliation_id IN ("
-                 "SELECT id FROM clan_affiliations WHERE "
-                 "user_id = (SELECT id FROM users WHERE tag = %s))")
+    for i, tag in enumerate(tags):
+        tags[i] = "'" + tag + "'"
+
+    clan_tags_str = ", ".join(tags)
+    query = ("SELECT * FROM clan_time WHERE clan_affiliation_id IN ("
+             "SELECT id FROM clan_affiliations WHERE "
+             "user_id = (SELECT id FROM users WHERE tag = %s) AND "
+             f"clan_id IN (SELECT id FROM clans WHERE tag IN ({clan_tags_str})))")
 
     database, cursor = get_database_connection()
     cursor.execute(query, (player_tag))
