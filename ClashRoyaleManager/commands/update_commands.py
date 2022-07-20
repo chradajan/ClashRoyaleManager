@@ -53,18 +53,18 @@ async def register(interaction: discord.Interaction, tag: str):
             else:
                 LOG.debug("User entered tag of existing registered user")
                 embed = discord.Embed(title="The tag you entered is already associated with a user on this server.",
-                                        description="If the tag you entered belongs to you, contact an Admin for help.",
-                                        color=discord.Color.red())
+                                      description="If the tag you entered belongs to you, contact an Admin for help.",
+                                      color=discord.Color.red())
         except GeneralAPIError:
             LOG.warning("API issue during user registration")
             embed = discord.Embed(title="The Clash Royale API is currently inaccessible.",
-                                    description="Please try again later.",
-                                    color=discord.Color.red())
+                                  description="Please try again later.",
+                                  color=discord.Color.red())
         except ResourceNotFound:
             LOG.debug("User entered tag that does not exist")
             embed = discord.Embed(title="The tag you entered does not exist.",
-                                    description="Please enter your unique player tag.",
-                                    color=discord.Color.red())
+                                  description="Please enter your unique player tag.",
+                                  color=discord.Color.red())
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
     LOG.command_end()
@@ -174,8 +174,8 @@ async def set_reminder_time(interaction: discord.Interaction, reminder_time: app
     db_utils.set_reminder_time(interaction.user.id, reminder_time)
 
     embed = discord.Embed(title="Update successful!",
-                            description=f"You will now get pinged for automated {reminder_time.value} reminders.",
-                            color=discord.Color.green())
+                          description=f"You will now get pinged for automated {reminder_time.value} reminders.",
+                          color=discord.Color.green())
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
     LOG.command_end()

@@ -35,6 +35,7 @@ class EventsManager(commands.Cog):
         """Check for kick screenshots."""
         if message.channel == CHANNEL[SpecialChannel.Rules] and not message.author.guild_permissions.administrator:
             try:
+                LOG.info(log_message("Deleted message in rules channel", message=message.content, author=message.author))
                 await message.delete()
             except Exception as e:
                 LOG.exception(e)
