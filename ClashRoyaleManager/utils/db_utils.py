@@ -1002,14 +1002,13 @@ def prepare_for_battle_days(tag: str):
     cursor.execute("UPDATE river_race_user_data SET tracked_since = %s WHERE river_race_id = %s AND\
                     clan_affiliation_id IN (SELECT id FROM clan_affiliations WHERE clan_id = %s AND role IS NOT NULL)",
                    (current_time, river_race_id, clan_id))
+    database.commit()
+    database.close()
 
     try:
         update_river_race_clans(tag)
     except GeneralAPIError:
         LOG.warning(f"Unable to get clans during battle day preparations for clan {tag}")
-
-    database.commit()
-    database.close()
 
 
 def update_river_race_clans(tag: str):

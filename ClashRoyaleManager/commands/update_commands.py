@@ -161,7 +161,7 @@ async def unregister_all_members(interaction: discord.Interaction):
 
 
 @app_commands.command()
-@app_commands.describe(reminder_time="When you would prefer to be pinged. ASIA = 13:30 UTC, EU = 19:00 UTC, US = 02:00 UTC")
+@app_commands.describe(reminder_time="When you would prefer to be pinged. ASIA = 13:30 UTC, EU = 19:00 UTC, US = 03:00 UTC")
 @app_commands.choices(reminder_time=[
     app_commands.Choice(name="NA", value="NA"),
     app_commands.Choice(name="EU", value="EU"),

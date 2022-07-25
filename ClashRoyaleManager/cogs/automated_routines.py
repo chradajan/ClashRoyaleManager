@@ -227,7 +227,7 @@ class AutomatedRoutines(commands.Cog):
                 LOG.exception(e)
 
 
-        @aiocron.crontab('0 2 * * 5,6,0,1')
+        @aiocron.crontab('0 3 * * 5,6,0,1')
         async def automated_reminder_na():
             """Send a reminder for all clans with reminders enabled. Mention users with a NA reminder time preference."""
             try:
@@ -359,6 +359,13 @@ class AutomatedRoutines(commands.Cog):
                                 continue
 
                     message += mentions
+
+                    if not embed_one.fields:
+                        message = None
+                        embed_one = discord.Embed(title=(f"All members of {discord.utils.escape_markdown(clan['name'])} met the "
+                                                         "minimum participation requirements. No strikes have been assigned."),
+                                                  color=discord.Color.green())
+
                     await channel.send(content=message, embed=embed_one)
 
                     if field_count > 25:
