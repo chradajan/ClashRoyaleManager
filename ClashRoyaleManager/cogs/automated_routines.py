@@ -109,6 +109,7 @@ class AutomatedRoutines(commands.Cog):
                         deck_usage = clash_utils.get_deck_usage_today(tag)
                     except GeneralAPIError:
                         LOG.warning(f"Skipping final reset time check for {tag}")
+                        db_utils.set_clan_reset_time(tag, weekday)
                         continue
 
                     usage_sum = sum(deck_usage.values())
@@ -302,7 +303,7 @@ class AutomatedRoutines(commands.Cog):
                                    "received a strike:\n**")
                     elif participation_data["strike_type"] == StrikeType.Medals:
                         message = (f"**The following members of {discord.utils.escape_markdown(clan['name'])} did not meet the minimum "
-                                   f"requirement of {participation_data['strike_threshold']} medals and have received a strike:\n")
+                                   f"requirement of {participation_data['strike_threshold']} medals and have received a strike:\n**")
 
                     embed_one = discord.Embed()
                     embed_two = discord.Embed()

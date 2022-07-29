@@ -1048,6 +1048,31 @@ def update_river_race_clans(tag: str):
     database.close()
 
 
+def set_clan_reset_time(tag: str, weekday: int):
+    """Set a clan's daily reset time. Used for times when API is down and reset time cannot be detected.
+
+    Args:
+        tag: Tag of clan to set reset time for.
+        weekday: Which day to set reset time for.
+    """
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag)
+
+    if river_race_id is None:
+        LOG.warning(log_message("Missing river_races entry", tag=tag, weekday=weekday))
+        return
+
+    if weekday:
+        day_key = f"day_{weekday}"
+    else:
+        day_key = "day_7"
+
+    database, cursor = get_database_connection()
+    reset_time_query = f"UPDATE river_races SET {day_key} = CURRENT_TIMESTAMP WHERE id = %s"
+    cursor.execute(reset_time_query, (river_race_id))
+    database.commit()
+    database.close()
+
+
 def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
     """Log daily deck usage for each member of a clan and record reset time.
 
