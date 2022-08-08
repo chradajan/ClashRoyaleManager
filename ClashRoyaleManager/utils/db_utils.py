@@ -1313,28 +1313,26 @@ def prepare_for_river_race(tag: str):
     cursor.execute("SELECT MAX(id) AS id FROM seasons")
     season_id = cursor.fetchone()["id"]
 
-    try:
-        river_race_info = clash_utils.get_current_river_race_info(tag)
+    week = 1
+    delta = datetime.timedelta(days=7)
+    date = datetime.datetime.utcnow()
+    current_month = date.month
+    date -= delta
 
-        if clash_utils.is_first_day_of_season():
-            river_race_info["week"] = 1
-            river_race_info["colosseum_week"] = False
-            river_race_info["completed_saturday"] = False
-    except GeneralAPIError:
-        LOG.warning(f"Unable to get current river race info for {tag}. Creating placeholder River Race entry.")
-        river_race_info = {
-            "week": 0,
-            "start_time": datetime.datetime.fromisoformat("1970-01-01 00:00:00.000"),
-            "colosseum_week": False,
-            "completed_saturday": False,
-            "clans": []
-        }
+    while date.month == current_month:
+        date -= delta
+        week += 1
 
-    river_race_info["clan_id"] = clan_id
-    river_race_info["season_id"] = season_id
+    river_race_info = {
+        "clan_id": clan_id,
+        "season_id": season_id,
+        "week": week,
+        "colosseum_week": clash_utils.is_colosseum_week(),
+        "completed_saturday": False
+    }
 
     cursor.execute("INSERT INTO river_races (clan_id, season_id, week, start_time, colosseum_week, completed_saturday)\
-                    VALUES (%(clan_id)s, %(season_id)s, %(week)s, %(start_time)s, %(colosseum_week)s, %(completed_saturday)s)",
+                    VALUES (%(clan_id)s, %(season_id)s, %(week)s, CURRENT_TIMESTAMP, %(colosseum_week)s, %(completed_saturday)s)",
                    river_race_info)
 
     database.commit()
