@@ -273,7 +273,7 @@ class AutomatedRoutines(commands.Cog):
                 LOG.exception(e)
 
 
-        @aiocron.crontab('0 18 * * 1')
+        @aiocron.crontab('0 14 * * 1')
         async def assign_strikes():
             """Assign automated strikes based on performance in most recent River Race."""
             try:
