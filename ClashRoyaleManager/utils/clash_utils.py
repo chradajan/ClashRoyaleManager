@@ -653,7 +653,7 @@ def get_battle_day_stats(player_tag: str,
         GeneralAPIError: Something went wrong with the request.
         ResourceNotFound: Invalid tag was provided.
     """
-    LOG.info(log_message("Getting battlog of user", player_tag=player_tag, clan_tag=clan_tag, last_check=last_check))
+    LOG.info(log_message("Getting battle log of user", player_tag=player_tag, clan_tag=clan_tag, last_check=last_check))
     req = requests.get(url=f"https://api.clashroyale.com/v1/players/%23{player_tag[1:]}/battlelog",
                        headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
 
@@ -715,38 +715,22 @@ def get_battle_day_stats(player_tag: str,
                 stats["boat_losses"] += 1
 
         elif battle["type"].startswith("riverRaceDuel"):
-            # Determine duel series outcome by result of final game.
-            king_hit_points = battle["team"][0].get("kingTowerHitPoints")
-            princess_list = battle["team"][0].get("princessTowersHitPoints")
-            opponent_king_hit_points = battle["opponent"][0].get("kingTowerHitPoints")
-            opponent_princess_list = battle["opponent"][0].get("princessTowersHitPoints")
+            duel_wins = 0
+            duel_losses = 0
 
-            if king_hit_points is None:
-                duel_won = False
-            elif opponent_king_hit_points is None:
-                duel_won = True
-            elif (princess_list is None) and (opponent_princess_list is not None):
-                duel_won = False
-            elif (princess_list is not None) and (opponent_princess_list is None):
-                duel_won = True
-            elif len(princess_list) < len(opponent_princess_list):
-                duel_won = False
-            elif len(princess_list) > len(opponent_princess_list):
-                duel_won = True
+            for i, match_played in enumerate(battle["team"][0]["rounds"]):
+                if (match_played["crowns"] > battle["opponent"][0]["rounds"][i]["crowns"]):
+                    duel_wins += 1
+                else:
+                    duel_losses += 1
 
-            # Determine how many individual matches were won/lost by number of cards used.
-            if duel_won:
+            stats["duel_wins"] += duel_wins
+            stats["duel_losses"] += duel_losses
+
+            if duel_wins > duel_losses:
                 stats["series_wins"] += 1
-                stats["duel_wins"] += 2
-
-                if len(battle["team"][0]["cards"]) == 24:
-                    stats["duel_losses"] += 1
             else:
                 stats["series_losses"] += 1
-                stats["duel_losses"] += 2
-
-                if len(battle["team"][0]["cards"]) == 24:
-                    stats["duel_wins"] += 1
 
     return stats
 
