@@ -10,7 +10,7 @@ import utils.db_utils as db_utils
 import utils.discord_utils as discord_utils
 from log.logger import LOG, log_message
 from utils.channel_manager import CHANNEL
-from utils.custom_types import ReminderTime, SpecialChannel
+from utils.custom_types import ReminderTime
 from utils.exceptions import GeneralAPIError
 
 PRIMARY_CLANS = db_utils.get_primary_clans_enum()

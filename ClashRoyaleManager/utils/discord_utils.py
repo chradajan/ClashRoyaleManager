@@ -206,8 +206,7 @@ async def send_reminder(tag: str, channel: discord.TextChannel, reminder_time: R
         if reminder_time == ReminderTime.ALL:
             message = f"All members of {discord.utils.escape_markdown(clan_name)} have already used all their decks today."
         else:
-            message = (f"All members of {discord.utils.escape_markdown(clan_name)} that receive {reminder_time.value} reminders "
-                       "have already used all their decks today.")
+            return
 
         embed = discord.Embed(title=message, color=discord.Color.green())
         message = None
