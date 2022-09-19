@@ -293,12 +293,13 @@ def get_member_from_mention(interaction: discord.Interaction, mention: str) -> U
     return member
 
 
-async def update_strikes_helper(search_key: Union[int, str], name: str, delta: int) -> discord.Embed:
+async def update_strikes_helper(search_key: Union[int, str], name: str, delta: int, notify_user: bool) -> discord.Embed:
     """Update a user's strike count and send a message to the strikes channel confirming the change.
 
     Args:
         search_key: Either the Discord ID or tag of the user to strike.
         name: Name of user to update strikes of.
+        notify_user: Whether to tag the person being updated in the strikes channel.
 
     Returns:
         Embed confirming the update.
@@ -308,18 +309,12 @@ async def update_strikes_helper(search_key: Union[int, str], name: str, delta: i
     if prev is None:
         return user_not_found_embed(name)
 
-    title = "has received a strike" if delta > 0 else "has had a strike removed"
+    title = "has received a strike." if delta > 0 else "has had a strike removed."
     embed = discord.Embed(title=f"{discord.utils.escape_markdown(name)} {title}", description=f"{prev} -> {curr}")
-    member = None
-    message = None
 
-    if isinstance(search_key, int):
-        member = discord.utils.get(CHANNEL[SpecialChannel.Strikes].members, id=search_key)
+    if notify_user:
+        await CHANNEL[SpecialChannel.Strikes].send(embed=embed)
 
-        if member is not None:
-            message = f"{member.mention}"
-
-    await CHANNEL[SpecialChannel.Strikes].send(content=message, embed=embed)
     return embed
 
 

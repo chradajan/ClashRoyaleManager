@@ -34,7 +34,7 @@ async def update_context_menu(interaction: discord.Interaction, member: discord.
 async def give_strike_context_menu(interaction: discord.Interaction, member: discord.Member):
     """Give a strike to this member."""
     LOG.command_start(interaction, target=member)
-    embed = await discord_utils.update_strikes_helper(member.id, member.display_name, 1)
+    embed = await discord_utils.update_strikes_helper(member.id, member.display_name, 1, True)
     await interaction.response.send_message(embed=embed, ephemeral=True)
     LOG.command_end()
 
@@ -43,7 +43,7 @@ async def give_strike_context_menu(interaction: discord.Interaction, member: dis
 async def remove_strike_context_menu(interaction: discord.Interaction, member: discord.Member):
     """Remove a strike from this member."""
     LOG.command_start(interaction, target=member)
-    embed = await discord_utils.update_strikes_helper(member.id, member.display_name, -1)
+    embed = await discord_utils.update_strikes_helper(member.id, member.display_name, -1, True)
     await interaction.response.send_message(embed=embed, ephemeral=True)
     LOG.command_end()
 
