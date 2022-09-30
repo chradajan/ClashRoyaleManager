@@ -1,0 +1,10 @@
+aiocron==1.4
+discord.py==2.0.1
+numpy==1.21.5
+opencv_python==4.5.4.60
+prettytable==2.1.0
+PyMySQL==1.0.2
+pytesseract==0.3.8
+requests==2.22.0
+setuptools==45.2.0
+XlsxWriter==3.0.1
