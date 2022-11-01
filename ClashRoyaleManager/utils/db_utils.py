@@ -1093,13 +1093,18 @@ def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
     else:
         day_key = "day_7"
 
+    active_key = day_key + "_active"
+    active_members = clash_utils.get_active_members_in_clan(tag)
+
     database, cursor = get_database_connection()
     reset_time_query = f"UPDATE river_races SET {day_key} = CURRENT_TIMESTAMP WHERE id = %s"
     cursor.execute(reset_time_query, (river_race_id))
 
     last_check = get_last_check(tag)
-    update_usage_query = (f"INSERT INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check, {day_key}) "
-                          f"VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE {day_key} = %s, last_check = last_check")
+    update_usage_query = ("INSERT INTO river_race_user_data "
+                          f"(clan_affiliation_id, river_race_id, last_check, {day_key}, {active_key}) "
+                          "VALUES (%s, %s, %s, %s, %s) "
+                          f"ON DUPLICATE KEY UPDATE {day_key} = %s, {active_key} = %s, last_check = last_check")
 
     for player_tag, decks_used in deck_usage.items():
         cursor.execute("SELECT id FROM users WHERE tag = %s", (player_tag))
@@ -1127,8 +1132,10 @@ def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
             cursor.execute("SELECT id FROM clan_affiliations WHERE user_id = %s AND clan_id = %s", (user_id, clan_id))
             query_result = cursor.fetchone()
 
+        is_active = player_tag in active_members
         clan_affiliation_id = query_result["id"]
-        cursor.execute(update_usage_query, (clan_affiliation_id, river_race_id, last_check, decks_used, decks_used))
+        cursor.execute(update_usage_query,
+                       (clan_affiliation_id, river_race_id, last_check, decks_used, is_active, decks_used, is_active))
 
     database.commit()
     database.close()
