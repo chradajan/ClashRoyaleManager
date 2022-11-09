@@ -23,6 +23,7 @@ from log.logger import LOG, log_message
 from utils.custom_types import (
     AutomatedRoutine,
     BattleStats,
+    BlockedReason,
     ClanRole,
     ClanStrikeInfo,
     ClashData,
@@ -148,6 +149,38 @@ def update_clan_affiliation(clash_data: ClashData, cursor: Optional[pymysql.curs
                                     ON DUPLICATE KEY UPDATE\
                                     tracked_since = COALESCE(tracked_since, CURRENT_TIMESTAMP), last_check = last_check",
                                    clash_data)
+
+                    # Check if user battled for another clan today and is unable to battle for their new clan.
+                    last_reset_time = get_most_recent_reset_time(clash_data["clan_tag"])
+                    battled_for_other_clan = False
+
+                    if last_reset_time is not None:
+                        last_reset_time = last_reset_time.replace(hour=10, minute=0, second=0, microsecond=0)
+                        battled_for_other_clan = clash_utils.battled_for_other_clan(clash_data["tag"],
+                                                                                    clash_data["clan_tag"],
+                                                                                    last_reset_time)
+
+                    if battled_for_other_clan:
+                        cursor.execute("SELECT day_4, day_5, day_6, day_7 FROM river_races WHERE id = %s",
+                                       (clash_data["river_race_id"]))
+
+                        query_result = cursor.fetchone()
+                        blocked_day_key = None
+
+                        for key in ["day_4", "day_5", "day_6", "day_7"]:
+                            if query_result[key] is None:
+                                blocked_day_key = key
+                                break
+
+                        if blocked_day_key is not None:
+                            blocked_day_key = blocked_day_key + "_blocked"
+                            query = (f"UPDATE river_race_user_data SET {blocked_day_key} = %s "
+                                     "WHERE clan_affiliation_id = %s AND river_race_id = %s")
+
+                            cursor.execute(query,
+                                           (BlockedReason.PreviouslyBattled.value,
+                                            clash_data["clan_affiliation_id"],
+                                            clash_data["river_race_id"]))
                 else:
                     cursor.execute("INSERT INTO river_race_user_data (clan_affiliation_id, river_race_id, last_check)\
                                     VALUES (%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s)\
@@ -610,7 +643,7 @@ def get_clan_river_race_ids(tag: str, n: int=0) -> Tuple[int, int, int, int]:
     return (river_race_id, clan_id, season_id, week)
 
 
-def get_most_recent_reset_time(tag: str) -> datetime.datetime:
+def get_most_recent_reset_time(tag: str) -> Union[datetime.datetime, None]:
     """Get the most recent daily reset time for the specified clan.
 
     Args:
@@ -1094,6 +1127,7 @@ def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
         day_key = "day_7"
 
     active_key = day_key + "_active"
+    blocked_key = day_key + "_blocked"
     active_members = clash_utils.get_active_members_in_clan(tag)
 
     database, cursor = get_database_connection()
@@ -1101,10 +1135,29 @@ def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
     cursor.execute(reset_time_query, (river_race_id))
 
     last_check = get_last_check(tag)
-    update_usage_query = ("INSERT INTO river_race_user_data "
-                          f"(clan_affiliation_id, river_race_id, last_check, {day_key}, {active_key}) "
-                          "VALUES (%s, %s, %s, %s, %s) "
-                          f"ON DUPLICATE KEY UPDATE {day_key} = %s, {active_key} = %s, last_check = last_check")
+
+    if day_key in {"day_4", "day_5", "day_6", "day_7"}:
+        update_usage_query = ("INSERT INTO river_race_user_data "
+                              f"(clan_affiliation_id, river_race_id, last_check, {day_key}, {active_key}, {blocked_key}) VALUES "
+                              "(%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s, %(decks_used)s, %(is_active)s, %(blocked_reason)s) "
+                              f"ON DUPLICATE KEY UPDATE {day_key} = %(decks_used)s, {active_key} = %(is_active)s, last_check = last_check, "
+                              f"{blocked_key} = COALESCE({blocked_key}, %(blocked_reason)s)")
+    else:
+        update_usage_query = ("INSERT INTO river_race_user_data "
+                              f"(clan_affiliation_id, river_race_id, last_check, {day_key}, {active_key}) VALUES "
+                              "(%(clan_affiliation_id)s, %(river_race_id)s, %(last_check)s, %(decks_used)s, %(is_active)s) "
+                              f"ON DUPLICATE KEY UPDATE {day_key} = %(decks_used)s, {active_key} = %(is_active)s, last_check = last_check")
+
+    update_query_dict = {
+        "clan_affiliation_id": None,
+        "river_race_id": river_race_id,
+        "last_check": last_check,
+        "decks_used": None,
+        "is_active": None,
+        "blocked_reason": None
+    }
+
+    max_participation = len([decks_used for decks_used in deck_usage.values() if decks_used > 0]) == 50
 
     for player_tag, decks_used in deck_usage.items():
         cursor.execute("SELECT id FROM users WHERE tag = %s", (player_tag))
@@ -1132,10 +1185,16 @@ def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
             cursor.execute("SELECT id FROM clan_affiliations WHERE user_id = %s AND clan_id = %s", (user_id, clan_id))
             query_result = cursor.fetchone()
 
-        is_active = player_tag in active_members
-        clan_affiliation_id = query_result["id"]
-        cursor.execute(update_usage_query,
-                       (clan_affiliation_id, river_race_id, last_check, decks_used, is_active, decks_used, is_active))
+        update_query_dict["is_active"] = player_tag in active_members
+        update_query_dict["blocked_reason"] = BlockedReason.NotBlocked.value
+
+        if update_query_dict["is_active"] and max_participation and decks_used == 0:
+            update_query_dict["blocked_reason"] = BlockedReason.MaxParticipation.value
+
+        update_query_dict["clan_affiliation_id"] = query_result["id"]
+        update_query_dict["decks_used"] = decks_used
+
+        cursor.execute(update_usage_query, update_query_dict)
 
     database.commit()
     database.close()

@@ -60,6 +60,13 @@ class AutomatedRoutine(Enum):
     Strikes = "assign_strikes"
 
 
+class BlockedReason(Enum):
+    """Enum of reasons a user was unable to participate in a River Race."""
+    MaxParticipation = "max_participation"
+    PreviouslyBattled = "previously_battled"
+    NotBlocked = None
+
+
 class ClashData(TypedDict):
     """Dictionary containing data about user from the Clash Royale API."""
     tag: PlayerTag

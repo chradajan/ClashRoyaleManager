@@ -735,6 +735,43 @@ def get_battle_day_stats(player_tag: str,
     return stats
 
 
+def battled_for_other_clan(player_tag: str, clan_tag: str, time: datetime.datetime) -> bool:
+    """Check if a user has already used war decks today for a different clan.
+
+    Args:
+        player_tag: Tag of user to check battle log of.
+        clan_tag: Current clan of user.
+        time: Check for decks used after this time.
+
+    Returns:
+        Whether the specified user battled for a different clan today.
+    """
+    LOG.info(log_message("Checking for previous war participation", player_tag=player_tag, clan_tag=clan_tag, time=time))
+
+    req = requests.get(url=f"https://api.clashroyale.com/v1/players/%23{player_tag[1:]}/battlelog",
+                       headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+    if req.status_code != 200:
+        LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+        if req.status_code == 404:
+            raise ResourceNotFound
+        else:
+            raise GeneralAPIError
+
+    time = time.replace(tzinfo=datetime.timezone.utc)
+    battle_log = req.json()
+
+    for battle in battle_log:
+        battle_time = battletime_to_datetime(battle["battleTime"])
+
+        if ((battle["type"].startswith("riverRace") or battle["type"] == "boatBattle")
+                and time < battle_time
+                and battle["team"][0]["clan"]["tag"] != clan_tag):
+            return True
+
+    return False
+
+
 def medals_report(tag: str, threshold: int) -> List[Tuple[str, int]]:
     """Get a list of users in a clan below the specified medals threshold.
 
