@@ -1846,23 +1846,39 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
     affiliation_id_list: List[int] = [user["id"] for user in cursor]
     path = get_file_path(name)
     workbook = xlsxwriter.Workbook(path)
+    bold_format = workbook.add_format()
+    bold_format.set_bold()
 
     # Users sheet
     users_sheet = workbook.add_worksheet("Players")
     users_headers = ["Player Name", "Player Tag", "Discord Name", "Clan Name", "Clan Tag",
-                     "Clan Role", "Strikes", "Kicks", "Join Date", "Days In Clan", "RoyaleAPI"]
-    users_sheet.write_row(0, 0, users_headers)
+                     "Clan Role", "Strikes", "Kicks", "Original Join Date", "Days In Clan", "RoyaleAPI"]
+    users_sheet.write_row(0, 0, users_headers, bold_format)
+    users_sheet.freeze_panes(1, 0)
 
     # Kicks sheet
     kicks_sheet = workbook.add_worksheet("Kicks")
     kicks_headers = ["Player Name", "Player Tag"]
-    kicks_sheet.write_row(0, 0, kicks_headers)
+    kicks_sheet.write_row(0, 0, kicks_headers, bold_format)
+    kicks_sheet.freeze_panes(1, 0)
 
-    # Stats/Deck Usage sheets
+    # Data needed to create summary, stats, and deck usage sheets
     cursor.execute("SELECT id, season_id, week, start_time FROM river_races WHERE clan_id = %s ORDER BY season_id DESC, week DESC",
                    (clan_id))
     query_result = [race for race in cursor.fetchmany(size=weeks)]
     query_result.reverse()
+
+    # Summary sheet
+    summary_sheet = workbook.add_worksheet("Summary")
+    summary_headers = ["Player Name", "Player Tag", "Discord Name", "Clan Role", "Strikes", "Original Join Date"]
+
+    for river_race in query_result:
+        summary_headers.append(f"S{river_race['season_id']}-W{river_race['week']}")
+
+    summary_sheet.write_row(0, 0, summary_headers, bold_format)
+    summary_sheet.freeze_panes(1, 0)
+
+    # Stats/Deck Usage sheets
     river_race_list: List[Tuple[int, Worksheet, Worksheet]] = []
 
     stats_headers = ["Player Name", "Player Tag", "Medals", "Decks Used", "Tracked Since",
@@ -1876,7 +1892,8 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
     for river_race in query_result:
         stats_sheet_name = f"S{river_race['season_id']}-W{river_race['week']} Stats"
         stats_sheet = workbook.add_worksheet(stats_sheet_name)
-        stats_sheet.write_row(0, 0, stats_headers)
+        stats_sheet.write_row(0, 0, stats_headers, bold_format)
+        stats_sheet.freeze_panes(1, 0)
 
         history_sheet_name = f"S{river_race['season_id']}-W{river_race['week']} History"
         history_sheet = workbook.add_worksheet(history_sheet_name)
@@ -1887,7 +1904,8 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
             history_headers.append(history_header_date.strftime("%a, %b %d"))
             history_header_date += datetime.timedelta(days=1)
 
-        history_sheet.write_row(0, 0, history_headers)
+        history_sheet.write_row(0, 0, history_headers, bold_format)
+        history_sheet.freeze_panes(1, 0)
         river_race_list.append((river_race["id"], stats_sheet, history_sheet))
 
     all_time_stats_sheet = workbook.add_worksheet("All Time")
@@ -1898,7 +1916,8 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
                               "Duel Series Wins", "Duel Series Losses", "Duel Series Win Rate",
                               "Boat Attack Wins", "Boat Attack Losses", "Boat Attack Win Rate",
                               "Combined PvP Wins", "Combined PvP Losses", "Combined PvP Win Rate"]
-    all_time_stats_sheet.write_row(0, 0, all_time_stats_headers)
+    all_time_stats_sheet.write_row(0, 0, all_time_stats_headers, bold_format)
+    all_time_stats_sheet.freeze_panes(1, 0)
 
     # Write user data
     for row, clan_affiliation_id in enumerate(affiliation_id_list, start=1):
@@ -1936,6 +1955,10 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
         kicks_row.extend([kick.strftime("%Y-%m-%d") for kick in kicks])
         kicks_sheet.write_row(row, 0, kicks_row)
 
+        # Summary sheet data
+        summary_row = [user_data["player_name"], user_data["player_tag"], user_data["discord_name"], user_data["role"],
+                       user_data["strikes"], user_data["first_joined"].strftime("%Y-%m-%d %H:%M")]
+
         # Stats/Deck Usage data
         for river_race_id, stats_sheet, history_sheet in river_race_list:
             cursor.execute("SELECT * FROM river_race_user_data WHERE clan_affiliation_id = %s AND river_race_id = %s",
@@ -1945,6 +1968,7 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
             stats_row = [user_data["player_name"], user_data["player_tag"]]
 
             if race_data is None:
+                summary_row.append("-")
                 history_row.extend(["-"] * 7)
                 stats_row.extend([None] * 21)
             else:
@@ -1992,9 +2016,12 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
                 combined_win_rate = 0 if pvp_total == 0 else round(pvp_wins / pvp_total, 4)
                 stats_row.extend([pvp_wins, pvp_losses, combined_win_rate])
                 stats_row[3] = decks_used
+                summary_row.append(decks_used)
 
             history_sheet.write_row(row, 0, history_row)
             stats_sheet.write_row(row, 0, stats_row)
+
+        summary_sheet.write_row(row, 0, summary_row)
 
         # All time stats
         cursor.execute("SELECT * FROM river_race_user_data WHERE clan_affiliation_id = %s", (clan_affiliation_id))
@@ -2022,6 +2049,16 @@ def export_clan_data(tag: str, name: str, active_only: bool, weeks: int) -> str:
 
         all_time_stats_row = [user_data["player_name"], user_data["player_tag"]] + all_time_stats
         all_time_stats_sheet.write_row(row, 0, all_time_stats_row)
+
+    # Autofit all sheets
+    users_sheet.autofit()
+    kicks_sheet.autofit()
+    summary_sheet.autofit()
+
+    for _, stats_sheet, history_sheet in river_race_list:
+        stats_sheet.autofit()
+        history_sheet.autofit()
+        all_time_stats_sheet.autofit()
 
     database.close()
     workbook.close()
@@ -2069,12 +2106,15 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
         path = get_file_path("all_users")
 
     workbook = xlsxwriter.Workbook(path)
+    bold_format = workbook.add_format()
+    bold_format.set_bold()
 
     # Users sheet
     users_sheet = workbook.add_worksheet("Players")
     users_headers = ["Player Name", "Player Tag", "Discord Name", "Clan Name", "Clan Tag",
-                     "Clan Role", "Strikes", "Kicks", "Join Date", "Days In Clan Family", "RoyaleAPI"]
-    users_sheet.write_row(0, 0, users_headers)
+                     "Clan Role", "Strikes", "Kicks", "Original Join Date", "Days In Clan Family", "RoyaleAPI"]
+    users_sheet.write_row(0, 0, users_headers, bold_format)
+    users_sheet.freeze_panes(1, 0)
 
     # Kicks sheets
     kicks_sheets = {}
@@ -2082,7 +2122,8 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
 
     for clan in primary_clans:
         sheet = workbook.add_worksheet(f"{clan['name']} Kicks")
-        sheet.write_row(0, 0, kicks_headers)
+        sheet.write_row(0, 0, kicks_headers, bold_format)
+        sheet.freeze_panes(1, 0)
         kicks_sheets[clan["tag"]] = sheet
 
     # Stats sheets
@@ -2097,11 +2138,13 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
 
     for clan in primary_clans:
         stats_sheet = workbook.add_worksheet(f"{clan['name']} Stats")
-        stats_sheet.write_row(0, 0, stats_headers)
+        stats_sheet.write_row(0, 0, stats_headers, bold_format)
+        stats_sheet.freeze_panes(1, 0)
         stats_sheets.append((clan["id"], stats_sheet))
 
     combined_stats_sheet = workbook.add_worksheet("Combined Stats")
-    combined_stats_sheet.write_row(0, 0, stats_headers)
+    combined_stats_sheet.write_row(0, 0, stats_headers, bold_format)
+    combined_stats_sheet.freeze_panes(1, 0)
 
     # Write user data
     for row, user_id in enumerate(user_id_list, start=1):
@@ -2187,6 +2230,17 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
 
         combined_stats_row = [user_data["player_name"], user_data["player_tag"]] + combined_stats
         combined_stats_sheet.write_row(row, 0, combined_stats_row)
+
+    # Autofit all sheets
+    users_sheet.autofit()
+
+    for kicks_sheet in kicks_sheets.values():
+        kicks_sheet.autofit()
+
+    for _, stats_sheet in stats_sheets:
+        stats_sheet.autofit()
+
+    combined_stats_sheet.autofit()
 
     database.close()
     workbook.close()
