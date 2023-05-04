@@ -94,7 +94,7 @@ async def update_member(member: discord.Member, perform_database_update: bool) -
             return False
 
         tag, _, _ = member_info[0]
-        db_utils.update_user(tag)
+        db_utils.update_user(tag, full_discord_name(member))
 
     name = db_utils.clear_update_flag(member.id)
 
@@ -137,12 +137,12 @@ async def update_all_members(guild: discord.Guild):
     members_to_update = db_utils.get_all_updated_discord_users()
 
     for discord_id in members_to_update:
-        LOG.info("Updating member due to database clean up flag")
         member = guild.get_member(discord_id)
 
         if member is None:
             continue
 
+        LOG.info(log_message("Updating member due to database clean up flag", member=member, discord_id=discord_id))
         await update_member(member, False)
 
 

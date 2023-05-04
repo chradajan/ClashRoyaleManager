@@ -264,7 +264,7 @@ def insert_new_user(clash_data: ClashData,
     return True
 
 
-def update_user(tag: str):
+def update_user(tag: str, discord_name: Optional[str]=None):
     """Get a user's most up to date information and update their name and clan affiliation.
 
     Args:
@@ -285,7 +285,13 @@ def update_user(tag: str):
     else:
         clash_data["user_id"] = query_result["id"]
 
-    cursor.execute("UPDATE users SET name = %(name)s, needs_update = TRUE WHERE id = %(user_id)s", clash_data)
+    if discord_name is not None:
+        clash_data["discord_name"] = discord_name
+        cursor.execute("UPDATE users SET name = %(name)s, discord_name = %(discord_name)s, needs_update = TRUE\
+                        WHERE id = %(user_id)s",
+                       clash_data)
+    else:
+        cursor.execute("UPDATE users SET name = %(name)s, needs_update = TRUE WHERE id = %(user_id)s", clash_data)
 
     database.commit()
     database.close()
