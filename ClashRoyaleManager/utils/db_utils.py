@@ -738,6 +738,26 @@ def get_player_report_data(tag: str) -> DatabaseReport:
     }
 
 
+def get_discord_id_from_player_tag(tag: str) -> Optional[int]:
+    """Get Discord ID of player associated with specified player tag.
+   
+    Args:
+        tag: Tag of user to get Discord ID of.
+   
+    Returns:
+        Discord ID of user, or None if they are not registered on Discord.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT discord_id FROM users WHERE tag = %s", (tag))
+    query_result = cursor.fetchone()
+    database.close()
+
+    if query_result is None:
+        return None
+
+    return query_result["discord_id"]
+
+
 ############################################################################
 #  __     __         _       _     _             _____     _     _         #
 #  \ \   / /_ _ _ __(_) __ _| |__ | | ___  ___  |_   _|_ _| |__ | | ___    #

@@ -132,32 +132,100 @@ async def update_all_members(interaction: discord.Interaction):
 async def unregister_member(interaction: discord.Interaction, member: discord.Member):
     """Remove another member's roles and assign them the new member role."""
     LOG.command_start(interaction, member=member)
+    await interaction.response.defer()
     db_utils.dissociate_discord_info_from_user(member)
     await discord_utils.reset_to_new(member)
     embed = discord.Embed(title=f"{member} has had their roles stripped and assigned the new member role",
                           color=discord.Color.green())
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.followup.send(embed=embed, ephemeral=True)
+    LOG.command_end()
+
+
+@app_commands.command()
+@app_commands.checks.cooldown(1, 10.0)
+@app_commands.describe(member="Member to register")
+@app_commands.describe(tag="Player tag to register user to")
+async def register_member(interaction: discord.Interaction, member: discord.Member, tag: str):
+    """Manually register a Discord user. This is the same as that member using /register."""
+    LOG.command_start(interaction, member=member)
+    processed_tag = clash_utils.process_clash_royale_tag(tag)
+
+    if processed_tag is not None:
+        current_affiliation_id = db_utils.get_discord_id_from_player_tag(processed_tag)
+
+    if processed_tag is None:
+        embed = discord.Embed(title="You entered an invalid Supercell tag. Please try again.", color=discord.Color.red())
+    elif processed_tag in (clans := db_utils.get_clans_in_database()):
+        embed = discord.Embed(title=(f"You entered the clan tag of {discord.utils.escape_markdown(clans[processed_tag])}. "
+                                     "Please enter your own player tag."))
+    elif (current_affiliation_id is not None) and (current_affiliation_id != member.id):
+        existing_member = discord.utils.get(interaction.guild.members, id=current_affiliation_id)
+        embed = discord.Embed(title=f"That tag is already affiliated with {discord_utils.full_discord_name(existing_member)}.",
+                              color=discord.Color.red())
+    else:
+        db_utils.dissociate_discord_info_from_user(member)
+
+        try:
+            clash_data = clash_utils.get_clash_royale_user_data(processed_tag)
+            db_utils.insert_new_user(clash_data, member)
+
+            try:
+                await member.edit(nick=clash_data["name"])
+            except discord.errors.Forbidden:
+                pass
+
+            await discord_utils.assign_roles(member)
+
+            LOG.info("Member successfully registered manually")
+            new_member_embed = discord_utils.create_card_levels_embed(clash_data)
+            await CHANNEL[SpecialChannel.NewMemberInfo].send(embed=new_member_embed)
+            discord_name = discord_utils.full_discord_name(member)
+
+            embed = discord.Embed(title="Manual registration successful!",
+                                  description=f"{discord_name} has been registered as {clash_data['name']}.",
+                                  color=discord.Color.green())
+        except GeneralAPIError:
+            LOG.warning("API issue during manual user registration")
+            embed = discord.Embed(title="The Clash Royale API is currently inaccessible.",
+                                  description="Please try again later.",
+                                  color=discord.Color.red())
+        except ResourceNotFound:
+            LOG.debug("User entered tag that does not exist during manual registration")
+            embed = discord.Embed(title="The tag you entered does not exist.",
+                                  description="Please enter a valid player tag.",
+                                  color=discord.Color.red())
+
+    await interaction.response.send_message(embed=embed)
     LOG.command_end()
 
 
 @app_commands.command()
 @app_commands.checks.cooldown(1, 720.0)
-async def unregister_all_members(interaction: discord.Interaction):
-    """Remove roles from all members on the server and assign everyone the new member role."""
+@app_commands.describe(confirmation="""Enter "Yes I'm Sure" to issue command.""")
+async def unregister_all_members(interaction: discord.Interaction, confirmation: str):
+    """Remove roles from all members on the server and assign everyone the new member role. Type "Yes I'm Sure" to confirm."""
     LOG.command_start(interaction)
     await interaction.response.defer()
-    count = 0
 
-    for member in interaction.guild.members:
-        if member.bot:
-            continue
+    if confirmation != "Yes I'm Sure":
+        embed = discord.Embed(title="Invalid confirmation message. No users have been unregistered.",
+                              description="Confirmation message must be spelled exactly as stated.",
+                              color=discord.Color.red())
+    else:
+        count = 0
 
-        count += 1
-        db_utils.dissociate_discord_info_from_user(member)
-        await discord_utils.reset_to_new(member)
+        for member in interaction.guild.members:
+            if member.bot:
+                continue
 
-    embed = discord.Embed(title=f"Unregister all members complete. {count} members have been reset.")
+            count += 1
+            db_utils.dissociate_discord_info_from_user(member)
+            await discord_utils.reset_to_new(member)
+
+        embed = discord.Embed(title=f"Unregister all members complete. {count} members have been reset.")
+
     await interaction.followup.send(embed=embed)
+    LOG.command_end()
 
 
 @app_commands.command()
@@ -186,6 +254,7 @@ async def set_reminder_time(interaction: discord.Interaction, reminder_time: app
 @update_member.error
 @update_all_members.error
 @unregister_member.error
+@register_member.error
 @unregister_all_members.error
 @set_reminder_time.error
 async def update_commands_error_handler(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -210,6 +279,7 @@ UPDATE_COMMANDS = [
     update_member,
     update_all_members,
     unregister_member,
+    register_member,
     unregister_all_members,
     set_reminder_time,
 ]
