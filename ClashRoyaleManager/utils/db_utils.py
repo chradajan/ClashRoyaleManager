@@ -2,6 +2,7 @@
 
 import datetime
 import os
+import requests
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple, Union
 
@@ -22,21 +23,29 @@ from config.credentials import (
 from log.logger import LOG, log_message
 from utils.custom_types import (
     AutomatedRoutine,
+    Battles,
     BattleStats,
     BlockedReason,
+    BoatBattle,
+    Card,
     ClanRole,
     ClanStrikeInfo,
     ClashData,
     DatabaseReport,
     DatabaseRiverRaceClan,
+    Duel,
     KickData,
     PrimaryClan,
+    PvPBattle,
     ReminderTime,
     SpecialChannel,
     SpecialRole,
     StrikeType,
 )
 from utils.exceptions import GeneralAPIError
+
+EXPORT_PATH = "export_data"
+CARD_IMAGE_PATH = "card_images"
 
 def get_database_connection() -> Tuple[pymysql.Connection, DictCursor]:
     """Establish connection to database.
@@ -1061,6 +1070,12 @@ def prepare_for_battle_days(tag: str):
     cursor.execute("UPDATE river_race_user_data SET tracked_since = %s WHERE river_race_id = %s AND\
                     clan_affiliation_id IN (SELECT id FROM clan_affiliations WHERE clan_id = %s AND role IS NOT NULL)",
                    (current_time, river_race_id, clan_id))
+
+    try:
+        update_cards_in_database(cursor)
+    except GeneralAPIError:
+        LOG.warning("Unable to check for potential card updates")
+
     database.commit()
     database.close()
 
@@ -1253,7 +1268,7 @@ def get_medal_counts(tag: str) -> Dict[str, Tuple[int, datetime.datetime]]:
     return results
 
 
-def record_battle_day_stats(stats: List[Tuple[BattleStats, int]]):
+def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]]):
     """Update users' Battle Day stats with their latest matches.
 
     Args:
@@ -1271,7 +1286,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, int]]):
 
     database, cursor = get_database_connection()
 
-    for user_stats, medals in stats:
+    for user_stats, battles, medals in stats:
         user_stats["medals"] = medals
         user_stats["river_race_id"] = river_race_id
         user_stats["clan_id"] = clan_id
@@ -1344,8 +1359,189 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, int]]):
                             boat_losses = boat_losses + %(boat_losses)s",
                        user_stats)
 
+        for battle in battles["pvp_battles"]:
+            insert_pvp_battle(battle, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor)
+
+        for duel in battles["duels"]:
+            insert_duel(duel, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor)
+
+        for boat_battle in battles["boat_battles"]:
+            insert_boat_battle(boat_battle, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor)
+
     database.commit()
     database.close()
+
+
+def update_cards_in_database(cursor: Optional[pymysql.cursors.DictCursor]=None):
+    """Add any new cards that may have been added to the database and update any existing ones that have had their names, url, or
+       max level changed.
+
+    Args:
+        cursor: Cursor used to interact with database. If not provided, will create a new one. Otherwise, use the one provided.
+                Caller is responsible for committing changes made by cursor if provided.
+
+    Raises:
+        GeneralAPIError: Something went wrong getting list of current cards from Clash Royale API.
+    """
+    close_connection = False
+    current_cards = clash_utils.get_all_cards()
+
+    if cursor is None:
+        close_connection = True
+        database, cursor = get_database_connection()
+
+    cursor.execute("SELECT * FROM cards")
+    query_result = cursor.fetchall()
+    db_cards_dict = {card["id"] : card for card in query_result}
+
+    if not os.path.exists(CARD_IMAGE_PATH):
+        os.makedirs(CARD_IMAGE_PATH)
+
+    for card in current_cards:
+        id = card["id"]
+
+        if id not in db_cards_dict:
+            LOG.info(log_message("Adding new card to database", id=id, name=card["name"]))
+            cursor.execute("INSERT INTO cards VALUES (%(id)s, %(name)s, %(max_level)s, %(url)s)", card)
+            file_name = str(card["id"]) + ".png"
+            card_path = os.path.join(CARD_IMAGE_PATH, file_name)
+
+            with open(card_path, 'wb') as card_file:
+                card_file.write(requests.get(card["url"]).content)
+
+        elif ((card["name"] != db_cards_dict[id]["name"])
+                or (card["max_level"] != db_cards_dict[id]["max_level"])
+                or (card["url"] != db_cards_dict[id]["url"])):
+            LOG.info(log_message("Updating existing card in database",
+                                 id=id,
+                                 orig_name=db_cards_dict[id]["name"],
+                                 new_name=card["name"],
+                                 orig_max_levl=db_cards_dict[id]["max_level"],
+                                 new_max_level=card["max_level"],
+                                 orig_url=db_cards_dict[id]["url"],
+                                 new_url=card["url"]))
+            cursor.execute("UPDATE cards SET name = %(name)s, max_level = %(max_level)s, url = %(url)s WHERE id = %(id)s",
+                           card)
+
+            if card["url"] != db_cards_dict[id]["url"]:
+                file_name = str(card["id"]) + ".png"
+                card_path = os.path.join(CARD_IMAGE_PATH, file_name)
+                os.remove(card_path)
+
+                with open(card_path, 'wb') as card_file:
+                    card_file.write(requests.get(card["url"]).content)
+
+    if close_connection:
+        database.commit()
+        database.close()
+
+
+def insert_deck(deck: List[Card], cursor: pymysql.cursors.DictCursor) -> int:
+    """Insert a deck into the decks table if it doesn't exist.
+
+    Args:
+        deck: List of Cards to insert.
+        cursor: Cursor to use to insert deck.
+
+    Returns:
+        id of deck.
+    """
+    deck.sort(key=lambda x : x["id"])
+    deck_dict = {}
+
+    for i, card in enumerate(deck, 1):
+        deck_dict[f"card_{i}"] = card["id"]
+        deck_dict[f"card_{i}_level"] = card["level"] - card["max_level"]
+
+    cursor.execute("INSERT INTO decks VALUES (DEFAULT,\
+                        %(card_1)s, %(card_1_level)s,\
+                        %(card_2)s, %(card_2_level)s,\
+                        %(card_3)s, %(card_3_level)s,\
+                        %(card_4)s, %(card_4_level)s,\
+                        %(card_5)s, %(card_5_level)s,\
+                        %(card_6)s, %(card_6_level)s,\
+                        %(card_7)s, %(card_7_level)s,\
+                        %(card_8)s, %(card_8_level)s)\
+                    ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
+                   deck_dict)
+
+    cursor.execute("SELECT LAST_INSERT_ID() as id")
+    query_result = cursor.fetchone()
+    return query_result["id"]
+
+
+def insert_pvp_battle(battle: PvPBattle, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor) -> int:
+    battle_dict = {
+        "clan_affiliation_id": clan_affiliation_id,
+        "river_race_id": river_race_id,
+        "time": battle["time"],
+        "game_type": battle["game_type"],
+        "won": battle["won"],
+        "deck_id": insert_deck(battle["team_results"]["deck"], cursor),
+        "crowns": battle["team_results"]["crowns"],
+        "elixir_leaked": battle["team_results"]["elixir_leaked"],
+        "kt_hit_points": battle["team_results"]["kt_hit_points"],
+        "pt1_hit_points": battle["team_results"]["pt1_hit_points"],
+        "pt2_hit_points": battle["team_results"]["pt2_hit_points"],
+        "opp_deck_id": insert_deck(battle["opponent_results"]["deck"], cursor),
+        "opp_crowns": battle["opponent_results"]["crowns"],
+        "opp_elixir_leaked": battle["opponent_results"]["elixir_leaked"],
+        "opp_kt_hit_points": battle["opponent_results"]["kt_hit_points"],
+        "opp_pt1_hit_points": battle["opponent_results"]["pt1_hit_points"],
+        "opp_pt2_hit_points": battle["opponent_results"]["pt2_hit_points"]
+    }
+
+    cursor.execute("INSERT INTO pvp_battles VALUES (\
+                    DEFAULT, %(clan_affiliation_id)s, %(river_race_id)s, %(time)s, %(game_type)s,\
+                    %(won)s, %(deck_id)s, %(crowns)s, %(elixir_leaked)s, %(kt_hit_points)s,\
+                    %(pt1_hit_points)s, %(pt2_hit_points)s, %(opp_deck_id)s, %(opp_crowns)s,\
+                    %(opp_elixir_leaked)s, %(opp_kt_hit_points)s, %(opp_pt1_hit_points)s,\
+                    %(opp_pt2_hit_points)s)",
+                   battle_dict)
+
+    cursor.execute("SELECT LAST_INSERT_ID() as id")
+    query_result = cursor.fetchone()
+    return query_result["id"]
+
+
+def insert_duel(duel: Duel, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor):
+    duel_dict = {
+        "clan_affiliation_id": clan_affiliation_id,
+        "river_race_id": river_race_id,
+        "time": duel["time"],
+        "won": duel["won"],
+        "battle_wins": duel["battle_wins"],
+        "battle_losses": duel["battle_losses"],
+        "round_1": None,
+        "round_2": None,
+        "round_3": None
+    }
+
+    for i, battle in enumerate(duel["battles"], 1):
+        duel_dict[f"round_{i}"] = insert_pvp_battle(battle, clan_affiliation_id, river_race_id, cursor)
+
+    cursor.execute("INSERT INTO duels VALUES (\
+                    DEFAULT, %(clan_affiliation_id)s, %(river_race_id)s, %(time)s, %(won)s,\
+                    %(battle_wins)s, %(battle_losses)s, %(round_1)s, %(round_2)s, %(round_3)s)",
+                   duel_dict)
+
+
+def insert_boat_battle(boat_battle: BoatBattle, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor):
+    boat_dict = {
+        "clan_affiliation_id": clan_affiliation_id,
+        "river_race_id": river_race_id,
+        "time": boat_battle["time"],
+        "deck_id": insert_deck(boat_battle["deck"], cursor),
+        "elixir_leaked": boat_battle["elixir_leaked"],
+        "new_towers_destroyed": boat_battle["new_towers_destroyed"],
+        "prev_towers_destroyed": boat_battle["prev_towers_destroyed"],
+        "remaining_towers": boat_battle["remaining_towers"]
+    }
+
+    cursor.execute("INSERT INTO boat_battles VALUES (DEFAULT,\
+                    %(clan_affiliation_id)s, %(river_race_id)s, %(time)s, %(deck_id)s, %(elixir_leaked)s,\
+                    %(new_towers_destroyed)s, %(prev_towers_destroyed)s, %(remaining_towers)s)",
+                   boat_dict)
 
 
 def get_current_season_river_race_clans(tag: str) -> Dict[str, DatabaseRiverRaceClan]:
@@ -1826,19 +2022,17 @@ def get_file_path(name: str) -> str:
     Returns:
         Path to new file.
     """
-    path = "export_data"
+    if not os.path.exists(EXPORT_PATH):
+        os.makedirs(EXPORT_PATH)
 
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-    files = [os.path.join(path, f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+    files = [os.path.join(EXPORT_PATH, f) for f in os.listdir(EXPORT_PATH) if os.path.isfile(os.path.join(EXPORT_PATH, f))]
     files.sort(key=os.path.getmtime)
 
     if len(files) >= 5:
         os.remove(files[0])
 
     file_name = name.replace(" ", "_") + "_" + str(datetime.datetime.now().date()) + ".xlsx"
-    new_path = os.path.join(path, file_name)
+    new_path = os.path.join(EXPORT_PATH, file_name)
 
     return new_path
 

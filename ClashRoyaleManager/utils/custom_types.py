@@ -221,3 +221,52 @@ class RiverRaceStatus(TypedDict):
     name: ClanName
     total_remaining_decks: int
     active_remaining_decks: int
+
+class Card(TypedDict):
+    """Dictionary containing information about an individual card in the game."""
+    name: str
+    id: int
+    level: int
+    max_level: int
+    url: str
+
+class PvPBattleResult(TypedDict):
+    """Dictionary containing information about one player's results of a PvP battle."""
+    crowns: int
+    elixir_leaked: float
+    kt_hit_points: int
+    pt1_hit_points: int
+    pt2_hit_points: int
+    deck: List[Card]
+
+class PvPBattle(TypedDict):
+    """Dictionary containing information about a single PvP battle."""
+    time: datetime.datetime
+    won: bool
+    game_type: str
+    team_results: PvPBattleResult
+    opponent_results: PvPBattleResult
+
+class Duel(TypedDict):
+    """Dictionary containing information about a duel."""
+    time: datetime.datetime
+    won: bool
+    battle_wins: int
+    battle_losses: int
+    battles: List[PvPBattle]
+
+class BoatBattle(TypedDict):
+    """Dictionary containing information about a boat battle."""
+    time: datetime.datetime
+    won: bool
+    elixir_leaked: float
+    new_towers_destroyed: int
+    prev_towers_destroyed: int
+    remaining_towers: int
+    deck: List[Card]
+
+class Battles(TypedDict):
+    """Dictionary containing a user's River Race battles."""
+    pvp_battles: List[PvPBattle]
+    duels: List[Duel]
+    boat_battles: List[BoatBattle]

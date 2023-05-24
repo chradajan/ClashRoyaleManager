@@ -9,16 +9,24 @@ import utils.db_utils as db_utils
 from config.credentials import CLASH_API_KEY
 from log.logger import LOG, log_message
 from utils.custom_types import (
+    Battles,
     BattleStats,
+    BoatBattle,
+    Card,
     ClanRole,
     ClashData,
     DecksReport,
+    Duel,
     Participant,
+    PvPBattle,
+    PvPBattleResult,
     RiverRaceClan,
     RiverRaceInfo,
     RiverRaceStatus
 )
 from utils.exceptions import GeneralAPIError, ResourceNotFound
+
+MAX_CARD_LEVEL = 14
 
 def process_clash_royale_tag(input: str) -> Union[str, None]:
     """Take a user's input and validate that it's a valid Supercell tag.
@@ -136,6 +144,40 @@ def get_total_cards() -> int:
     return get_total_cards.cached_total
 
 
+def get_all_cards() -> List[Card]:
+    """Get a list of all cards currently in the game.
+
+    Returns:
+        A list of all cards.
+
+    Raises:
+        GeneralAPIError: Something went wrong with the request.
+    """
+    LOG.info("Getting a list of all cards available in the game.")
+    req = requests.get(url="https://api.clashroyale.com/v1/cards",
+                       headers={"Accept": "application/json", "authorization": f"Bearer {CLASH_API_KEY}"})
+
+    if req.status_code != 200:
+        LOG.warning(log_message(msg="Bad request", status_code=req.status_code))
+        raise GeneralAPIError
+
+    json_obj = req.json()
+    cards_list = []
+
+    for card in json_obj["items"]:
+        cards_list.append(
+            {
+                "name": card["name"],
+                "id": card["id"],
+                "level": card["maxLevel"],
+                "max_level": card["maxLevel"],
+                "url": card["iconUrls"].get("medium")
+            }
+        )
+
+    return cards_list
+
+
 def get_clash_royale_user_data(tag: str) -> ClashData:
     """Get a user's relevant Clash Royale information.
 
@@ -178,7 +220,7 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
     }
 
     for card in json_obj["cards"]:
-        card_level = 14 - (card["maxLevel"] - card["level"])
+        card_level = MAX_CARD_LEVEL - (card["maxLevel"] - card["level"])
         clash_data["cards"][card_level] += 1
         clash_data["found_cards"] += 1
 
@@ -637,10 +679,177 @@ def get_remaining_decks_today(tag: str) -> Dict[str, int]:
     LOG.info(f"Getting dictionary of users and how many decks they have remaining in clan {tag}")
 
 
+def interpret_regular_battle(raw_battle: dict) -> PvPBattle:
+    """Interpret a regular PvP battle and convert into a PvPBattle dictionary.
+
+    Args:
+        raw_battle: Dictionary of json data from Clash API representing a regular PvP battle.
+
+    Returns:
+        A PvPBattle representation of raw_battle.
+    """
+    def interpret_results(raw_result: dict) -> PvPBattleResult:
+        analyzed_result: PvPBattleResult = {
+            "crowns": raw_result["crowns"],
+            "elixir_leaked": raw_result["elixirLeaked"],
+            "kt_hit_points": raw_result.get("kingTowerHitPoints", 0),
+            "pt1_hit_points": 0,
+            "pt2_hit_points": 0,
+            "deck": []
+        }
+
+        if ("princessTowersHitPoints" in raw_result) and (raw_result["princessTowersHitPoints"] is not None):
+            if len(raw_result["princessTowersHitPoints"]) == 1:
+                analyzed_result["pt1_hit_points"] = raw_result["princessTowersHitPoints"][0]
+                analyzed_result["pt2_hit_points"] = 0
+            else:
+                analyzed_result["pt1_hit_points"] = raw_result["princessTowersHitPoints"][0]
+                analyzed_result["pt2_hit_points"] = raw_result["princessTowersHitPoints"][1]
+        else:
+            analyzed_result["pt1_hit_points"] = 0
+            analyzed_result["pt2_hit_points"] = 0
+
+        for card in raw_result["cards"]:
+            analyzed_result["deck"].append(
+                {
+                    "name": card["name"],
+                    "id": card["id"],
+                    "level": card["level"],
+                    "max_level": card["maxLevel"],
+                    "url": card["iconUrls"].get("medium")
+                }
+            )
+
+        return analyzed_result
+
+
+    pvp_battle: PvPBattle = {
+        "time": battletime_to_datetime(raw_battle["battleTime"]),
+        "won": False,
+        "game_type": raw_battle["gameMode"]["name"],
+        "team_results": interpret_results(raw_battle["team"][0]),
+        "opponent_results": interpret_results(raw_battle["opponent"][0])
+    }
+
+    if pvp_battle["team_results"]["crowns"] > pvp_battle["opponent_results"]["crowns"]:
+        pvp_battle["won"] = True
+
+    return pvp_battle
+
+
+def interpret_duel(raw_duel: dict) -> Duel:
+    """Interpret a duel and convert into a Duel dictionary.
+
+    Args:
+        raw_duel: Dictionary of json data from Clash API representing a duel.
+
+    Returns:
+        A Duel representation of raw_duel.
+    """
+    def interpret_results(raw_round: dict) -> PvPBattleResult:
+        analyzed_result: PvPBattleResult = {
+            "crowns": raw_round["crowns"],
+            "elixir_leaked": raw_round["elixirLeaked"],
+            "kt_hit_points": raw_round.get("kingTowerHitPoints", 0),
+            "pt1_hit_points": 0,
+            "pt2_hit_points": 0,
+            "deck": []
+        }
+
+        if ("princessTowersHitPoints" in raw_round) and (raw_round["princessTowersHitPoints"] is not None):
+            if len(raw_round["princessTowersHitPoints"]) == 1:
+                analyzed_result["pt1_hit_points"] = raw_round["princessTowersHitPoints"][0]
+                analyzed_result["pt2_hit_points"] = 0
+            else:
+                analyzed_result["pt1_hit_points"] = raw_round["princessTowersHitPoints"][0]
+                analyzed_result["pt2_hit_points"] = raw_round["princessTowersHitPoints"][1]
+        else:
+            analyzed_result["pt1_hit_points"] = 0
+            analyzed_result["pt2_hit_points"] = 0
+
+        for card in raw_round["cards"]:
+            analyzed_result["deck"].append(
+                {
+                    "name": card["name"],
+                    "id": card["id"],
+                    "level": card["level"],
+                    "max_level": card["maxLevel"],
+                    "url": card["iconUrls"].get("medium")
+                }
+            )
+
+        return analyzed_result
+
+    duel: Duel = {
+        "time": battletime_to_datetime(raw_duel["battleTime"]),
+        "won": False,
+        "battle_wins": 0,
+        "battle_losses": 0,
+        "battles": []
+    }
+
+    game_type = raw_duel["gameMode"]["name"]
+
+    for i, raw_round in enumerate(raw_duel["team"][0]["rounds"]):
+        pvp_battle: PvPBattle = {
+            "time": battletime_to_datetime(raw_duel["battleTime"]),
+            "won": False,
+            "game_type": game_type,
+            "team_results": interpret_results(raw_round),
+            "opponent_results": interpret_results(raw_duel["opponent"][0]["rounds"][i])
+        }
+
+        if pvp_battle["team_results"]["crowns"] > pvp_battle["opponent_results"]["crowns"]:
+            pvp_battle["won"] = True
+            duel["battle_wins"] += 1
+        else:
+            duel["battle_losses"] += 1
+
+        duel["battles"].append(pvp_battle)
+
+    if duel["battle_wins"] > duel["battle_losses"]:
+        duel["won"] = True
+
+    return duel
+
+
+def interpret_boat_battle(raw_battle: dict) -> BoatBattle:
+    """Interpret a boat battle and convert into a BoatBattle dictionary.
+
+    Args:
+        raw_battle: Dictionary of json data from Clash API representing a boat battle.
+
+    Returns:
+        A BoatBattle representation of raw_battle.
+    """
+    boat_battle: BoatBattle = {
+        "time": battletime_to_datetime(raw_battle["battleTime"]),
+        "won": raw_battle["boatBattleWon"],
+        "elixir_leaked": raw_battle["team"][0]["elixirLeaked"],
+        "new_towers_destroyed": raw_battle["newTowersDestroyed"],
+        "prev_towers_destroyed": raw_battle["prevTowersDestroyed"],
+        "remaining_towers": raw_battle["remainingTowers"],
+        "deck": []
+    }
+
+    for card in raw_battle["team"][0]["cards"]:
+        boat_battle["deck"].append(
+            {
+                "name": card["name"],
+                "id": card["id"],
+                "level": card["level"],
+                "max_level": card["maxLevel"],
+                "url": card["iconUrls"].get("medium")
+            }
+        )
+
+    return boat_battle
+
+
 def get_battle_day_stats(player_tag: str,
                          clan_tag: str,
                          last_check: datetime.datetime,
-                         current_time: datetime.datetime) -> BattleStats:
+                         current_time: datetime.datetime) -> Tuple[BattleStats, Battles]:
     """Get wins/losses of each River Race game mode for a user.
 
     Args:
@@ -648,6 +857,9 @@ def get_battle_day_stats(player_tag: str,
         clan_tag: Only consider matches played while in this clan.
         last_check: Only consider matches played on or after this time.
         current_time: Only consider matches played before this time.
+
+    Returns:
+        Tuple of the user's stats and their battles.
 
     Raises:
         GeneralAPIError: Something went wrong with the request.
@@ -692,47 +904,47 @@ def get_battle_day_stats(player_tag: str,
         "boat_losses": 0
     }
 
-    for battle in battles_to_analyze:
-        if battle["type"] == "riverRacePvP":
-            if battle["gameMode"]["name"] == "CW_Battle_1v1":
-                if battle["team"][0]["crowns"] > battle["opponent"][0]["crowns"]:
+    battles: Battles = {
+        "pvp_battles": [],
+        "duels": [],
+        "boat_battles": []
+    }
+
+    for raw_battle in battles_to_analyze:
+        if raw_battle["type"] == "riverRacePvP":
+            pvp_battle = interpret_regular_battle(raw_battle)
+            battles["pvp_battles"].append(pvp_battle)
+
+            if pvp_battle["game_type"] == "CW_Battle_1v1":
+                if pvp_battle["won"]:
                     stats["regular_wins"] += 1
                 else:
                     stats["regular_losses"] += 1
             else:
-                if battle["team"][0]["crowns"] > battle["opponent"][0]["crowns"]:
+                if pvp_battle["won"]:
                     stats["special_wins"] += 1
                 else:
                     stats["special_losses"] += 1
+        elif (raw_battle["type"] == "boatBattle") and (raw_battle["boatBattleSide"] == "attacker"):
+            boat_battle = interpret_boat_battle(raw_battle)
+            battles["boat_battles"].append(boat_battle)
 
-        elif battle["type"] == "boatBattle":
-            if battle["boatBattleSide"] == "defender":
-                continue
-
-            if battle["boatBattleWon"]:
+            if boat_battle["won"]:
                 stats["boat_wins"] += 1
             else:
                 stats["boat_losses"] += 1
+        elif raw_battle["type"].startswith("riverRaceDuel"):
+            duel = interpret_duel(raw_battle)
+            battles["duels"].append(duel) 
+            stats["duel_wins"] += duel["battle_wins"]
+            stats["duel_losses"] += duel["battle_losses"]
 
-        elif battle["type"].startswith("riverRaceDuel"):
-            duel_wins = 0
-            duel_losses = 0
-
-            for i, match_played in enumerate(battle["team"][0]["rounds"]):
-                if (match_played["crowns"] > battle["opponent"][0]["rounds"][i]["crowns"]):
-                    duel_wins += 1
-                else:
-                    duel_losses += 1
-
-            stats["duel_wins"] += duel_wins
-            stats["duel_losses"] += duel_losses
-
-            if duel_wins > duel_losses:
+            if duel["won"]:
                 stats["series_wins"] += 1
             else:
                 stats["series_losses"] += 1
 
-    return stats
+    return (stats, battles)
 
 
 def battled_for_other_clan(player_tag: str, clan_tag: str, time: datetime.datetime) -> bool:

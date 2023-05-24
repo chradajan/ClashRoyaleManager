@@ -46,12 +46,12 @@ def update_clan_battle_day_stats(tag: str, post_race: bool):
                                      prior_medals=prior_medals))
 
                 try:
-                    stats = clash_utils.get_battle_day_stats(player_tag, tag, last_check, current_time)
+                    stats, battles = clash_utils.get_battle_day_stats(player_tag, tag, last_check, current_time)
                 except GeneralAPIError:
                     LOG.warning(log_message("Failed to get stats", player_tag=player_tag, clan_tag=tag, last_check=last_check))
                     continue
 
-                stats_to_record.append((stats, participant["medals"]))
+                stats_to_record.append((stats, battles, participant["medals"]))
 
         elif participant["medals"] > 0:
             LOG.info(log_message("New participant has gained medals since last check",
@@ -60,12 +60,12 @@ def update_clan_battle_day_stats(tag: str, post_race: bool):
                                  prior_medals=0))
 
             try:
-                stats = clash_utils.get_battle_day_stats(player_tag, tag, last_clan_check, current_time)
+                stats, battles = clash_utils.get_battle_day_stats(player_tag, tag, last_clan_check, current_time)
             except GeneralAPIError:
                 LOG.warning(log_message("Failed to get stats", player_tag=player_tag, clan_tag=tag, last_check=last_clan_check))
                 continue
 
-            stats_to_record.append((stats, participant["medals"]))
+            stats_to_record.append((stats, battles, participant["medals"]))
 
     db_utils.record_battle_day_stats(stats_to_record)
 

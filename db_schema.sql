@@ -1,8 +1,8 @@
--- MySQL dump 10.13  Distrib 8.0.29, for Linux (aarch64)
+-- MySQL dump 10.13  Distrib 8.0.33, for Linux (aarch64)
 --
 -- Host: localhost    Database: ClashRoyaleManager
 -- ------------------------------------------------------
--- Server version	8.0.29-0ubuntu0.20.04.3
+-- Server version	8.0.33-0ubuntu0.20.04.1
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -14,6 +14,49 @@
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `boat_battles`
+--
+
+DROP TABLE IF EXISTS `boat_battles`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `boat_battles` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `clan_affiliation_id` int NOT NULL,
+  `river_race_id` int NOT NULL,
+  `deck_id` int NOT NULL,
+  `elixir_leaked` float NOT NULL,
+  `new_towers_destroyed` tinyint NOT NULL,
+  `prev_towers_destroyed` tinyint NOT NULL,
+  `remaining_towers` tinyint NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `clan_affiliation_id` (`clan_affiliation_id`),
+  KEY `river_race_id` (`river_race_id`),
+  KEY `deck_id` (`deck_id`),
+  CONSTRAINT `boat_battles_ibfk_1` FOREIGN KEY (`clan_affiliation_id`) REFERENCES `clan_affiliations` (`id`),
+  CONSTRAINT `boat_battles_ibfk_2` FOREIGN KEY (`river_race_id`) REFERENCES `river_races` (`id`),
+  CONSTRAINT `boat_battles_ibfk_3` FOREIGN KEY (`deck_id`) REFERENCES `decks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cards`
+--
+
+DROP TABLE IF EXISTS `cards`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cards` (
+  `id` int NOT NULL,
+  `name` varchar(64) NOT NULL,
+  `max_level` tinyint NOT NULL,
+  `url` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `id` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `clan_affiliations`
@@ -88,6 +131,82 @@ CREATE TABLE `clans` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `decks`
+--
+
+DROP TABLE IF EXISTS `decks`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `decks` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `card_1` int NOT NULL,
+  `card_1_level` tinyint NOT NULL,
+  `card_2` int NOT NULL,
+  `card_2_level` tinyint NOT NULL,
+  `card_3` int NOT NULL,
+  `card_3_level` tinyint NOT NULL,
+  `card_4` int NOT NULL,
+  `card_4_level` tinyint NOT NULL,
+  `card_5` int NOT NULL,
+  `card_5_level` tinyint NOT NULL,
+  `card_6` int NOT NULL,
+  `card_6_level` tinyint NOT NULL,
+  `card_7` int NOT NULL,
+  `card_7_level` tinyint NOT NULL,
+  `card_8` int NOT NULL,
+  `card_8_level` tinyint NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `card_1` (`card_1`,`card_1_level`,`card_2`,`card_2_level`,`card_3`,`card_3_level`,`card_4`,`card_4_level`,`card_5`,`card_5_level`,`card_6`,`card_6_level`,`card_7`,`card_7_level`,`card_8`,`card_8_level`),
+  KEY `card_2` (`card_2`),
+  KEY `card_3` (`card_3`),
+  KEY `card_4` (`card_4`),
+  KEY `card_5` (`card_5`),
+  KEY `card_6` (`card_6`),
+  KEY `card_7` (`card_7`),
+  KEY `card_8` (`card_8`),
+  CONSTRAINT `decks_ibfk_1` FOREIGN KEY (`card_1`) REFERENCES `cards` (`id`),
+  CONSTRAINT `decks_ibfk_2` FOREIGN KEY (`card_2`) REFERENCES `cards` (`id`),
+  CONSTRAINT `decks_ibfk_3` FOREIGN KEY (`card_3`) REFERENCES `cards` (`id`),
+  CONSTRAINT `decks_ibfk_4` FOREIGN KEY (`card_4`) REFERENCES `cards` (`id`),
+  CONSTRAINT `decks_ibfk_5` FOREIGN KEY (`card_5`) REFERENCES `cards` (`id`),
+  CONSTRAINT `decks_ibfk_6` FOREIGN KEY (`card_6`) REFERENCES `cards` (`id`),
+  CONSTRAINT `decks_ibfk_7` FOREIGN KEY (`card_7`) REFERENCES `cards` (`id`),
+  CONSTRAINT `decks_ibfk_8` FOREIGN KEY (`card_8`) REFERENCES `cards` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `duels`
+--
+
+DROP TABLE IF EXISTS `duels`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `duels` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `clan_affiliation_id` int NOT NULL,
+  `river_race_id` int NOT NULL,
+  `won` tinyint(1) NOT NULL,
+  `battle_wins` tinyint NOT NULL,
+  `battle_losses` tinyint NOT NULL,
+  `round_1` int NOT NULL,
+  `round_2` int NOT NULL,
+  `round_3` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `clan_affiliation_id` (`clan_affiliation_id`),
+  KEY `river_race_id` (`river_race_id`),
+  KEY `round_1` (`round_1`),
+  KEY `round_2` (`round_2`),
+  KEY `round_3` (`round_3`),
+  CONSTRAINT `duels_ibfk_1` FOREIGN KEY (`clan_affiliation_id`) REFERENCES `clan_affiliations` (`id`),
+  CONSTRAINT `duels_ibfk_2` FOREIGN KEY (`river_race_id`) REFERENCES `river_races` (`id`),
+  CONSTRAINT `duels_ibfk_3` FOREIGN KEY (`round_1`) REFERENCES `pvp_battles` (`id`),
+  CONSTRAINT `duels_ibfk_4` FOREIGN KEY (`round_2`) REFERENCES `pvp_battles` (`id`),
+  CONSTRAINT `duels_ibfk_5` FOREIGN KEY (`round_3`) REFERENCES `pvp_battles` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `kicks`
 --
 
@@ -124,6 +243,43 @@ CREATE TABLE `primary_clans` (
   `discord_channel_id` bigint unsigned NOT NULL,
   PRIMARY KEY (`clan_id`),
   CONSTRAINT `primary_clans_ibfk_1` FOREIGN KEY (`clan_id`) REFERENCES `clans` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `pvp_battles`
+--
+
+DROP TABLE IF EXISTS `pvp_battles`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `pvp_battles` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `clan_affiliation_id` int NOT NULL,
+  `river_race_id` int NOT NULL,
+  `game_type` varchar(50) NOT NULL,
+  `won` tinyint(1) NOT NULL,
+  `deck_id` int NOT NULL,
+  `crowns` tinyint NOT NULL,
+  `elixir_leaked` float NOT NULL,
+  `kt_hit_points` smallint NOT NULL,
+  `pt1_hit_points` smallint NOT NULL,
+  `pt2_hit_points` smallint NOT NULL,
+  `opp_deck_id` int NOT NULL,
+  `opp_crowns` tinyint NOT NULL,
+  `opp_elixir_leaked` float NOT NULL,
+  `opp_kt_hit_points` smallint NOT NULL,
+  `opp_pt1_hit_points` smallint NOT NULL,
+  `opp_pt2_hit_points` smallint NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `clan_affiliation_id` (`clan_affiliation_id`),
+  KEY `river_race_id` (`river_race_id`),
+  KEY `deck_id` (`deck_id`),
+  KEY `opp_deck_id` (`opp_deck_id`),
+  CONSTRAINT `pvp_battles_ibfk_1` FOREIGN KEY (`clan_affiliation_id`) REFERENCES `clan_affiliations` (`id`),
+  CONSTRAINT `pvp_battles_ibfk_2` FOREIGN KEY (`river_race_id`) REFERENCES `river_races` (`id`),
+  CONSTRAINT `pvp_battles_ibfk_3` FOREIGN KEY (`deck_id`) REFERENCES `decks` (`id`),
+  CONSTRAINT `pvp_battles_ibfk_4` FOREIGN KEY (`opp_deck_id`) REFERENCES `decks` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -190,10 +346,10 @@ CREATE TABLE `river_race_user_data` (
   `day_5_active` tinyint(1) DEFAULT NULL,
   `day_6_active` tinyint(1) DEFAULT NULL,
   `day_7_active` tinyint(1) DEFAULT NULL,
-  `day_4_blocked` enum('max_participation', 'previously_battled') DEFAULT NULL,
-  `day_5_blocked` enum('max_participation', 'previously_battled') DEFAULT NULL,
-  `day_6_blocked` enum('max_participation', 'previously_battled') DEFAULT NULL,
-  `day_7_blocked` enum('max_participation', 'previously_battled') DEFAULT NULL,
+  `day_4_blocked` enum('max_participation','previously_battled') DEFAULT NULL,
+  `day_5_blocked` enum('max_participation','previously_battled') DEFAULT NULL,
+  `day_6_blocked` enum('max_participation','previously_battled') DEFAULT NULL,
+  `day_7_blocked` enum('max_participation','previously_battled') DEFAULT NULL,
   PRIMARY KEY (`clan_affiliation_id`,`river_race_id`),
   KEY `river_race_id` (`river_race_id`),
   CONSTRAINT `river_race_user_data_ibfk_1` FOREIGN KEY (`clan_affiliation_id`) REFERENCES `clan_affiliations` (`id`),
@@ -327,4 +483,4 @@ INSERT INTO `variables` VALUES (DEFAULT, DEFAULT);
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2022-07-08 18:30:52
+-- Dump completed on 2023-05-11 15:38:36

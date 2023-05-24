@@ -164,6 +164,7 @@ class AutomatedRoutines(commands.Cog):
             try:
                 LOG.automation_start("Starting evening Battle Day stats check")
                 db_utils.clean_up_database()
+                db_utils.update_cards_in_database()
                 primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
                 for tag, clan in primary_clans.items():
@@ -181,6 +182,7 @@ class AutomatedRoutines(commands.Cog):
             try:
                 LOG.automation_start("Starting morning Battle Day stats check")
                 db_utils.clean_up_database()
+                db_utils.update_cards_in_database()
                 primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
                 for tag, clan in primary_clans.items():
