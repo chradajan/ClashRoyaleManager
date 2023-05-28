@@ -1446,31 +1446,48 @@ def insert_deck(deck: List[Card], cursor: pymysql.cursors.DictCursor) -> int:
     Returns:
         id of deck.
     """
-    deck.sort(key=lambda x : x["id"])
-    deck_dict = {}
+    deck.sort(key=lambda x: x["id"])
+    card_id_str = ",".join(str(card["id"]) for card in deck)
+    card_level_str = ",".join(str(card["level"] - card["max_level"]) for card in deck)
 
-    for i, card in enumerate(deck, 1):
-        deck_dict[f"card_{i}"] = card["id"]
-        deck_dict[f"card_{i}_level"] = card["level"] - card["max_level"]
+    cursor.execute("SELECT deck_id,\
+                           GROUP_CONCAT(card_id ORDER BY card_id) AS cards,\
+                           GROUP_CONCAT(card_level ORDER BY card_id) AS card_levels\
+                    FROM deck_card\
+                    GROUP BY deck_id\
+                    HAVING cards = %s AND card_levels = %s",
+                   (card_id_str, card_level_str))
 
-    cursor.execute("INSERT INTO decks VALUES (DEFAULT,\
-                        %(card_1)s, %(card_1_level)s,\
-                        %(card_2)s, %(card_2_level)s,\
-                        %(card_3)s, %(card_3_level)s,\
-                        %(card_4)s, %(card_4_level)s,\
-                        %(card_5)s, %(card_5_level)s,\
-                        %(card_6)s, %(card_6_level)s,\
-                        %(card_7)s, %(card_7_level)s,\
-                        %(card_8)s, %(card_8_level)s)\
-                    ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
-                   deck_dict)
-
-    cursor.execute("SELECT LAST_INSERT_ID() as id")
     query_result = cursor.fetchone()
-    return query_result["id"]
+
+    if query_result is None:
+        cursor.execute("INSERT INTO decks VALUES (DEFAULT)")
+        cursor.execute("SELECT LAST_INSERT_ID() as deck_id")
+        deck_id = cursor.fetchone()["deck_id"]
+
+        for card in deck:
+            card["deck_id"] = deck_id
+            card["level_offset"] = card["level"] - card["max_level"]
+
+        cursor.executemany("INSERT INTO deck_card VALUES (%(deck_id)s, %(id)s, %(level_offset)s)", deck)
+    else:
+        deck_id = query_result["deck_id"]
+
+    return deck_id
 
 
 def insert_pvp_battle(battle: PvPBattle, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor) -> int:
+    """Insert an individual PvP battle into the pvp_battles table.
+
+    Args:
+        battle: Info about the battle.
+        clan_affiliation_id: Clan affiliation id of primary clan member who participated in the battle.
+        river_race_id: Id of river race in which battle took place.
+        cursor: Cursor to use to insert the battle.
+
+    Returns:
+        id of newly inserted PvP battle.
+    """
     battle_dict = {
         "clan_affiliation_id": clan_affiliation_id,
         "river_race_id": river_race_id,
@@ -1505,6 +1522,14 @@ def insert_pvp_battle(battle: PvPBattle, clan_affiliation_id: int, river_race_id
 
 
 def insert_duel(duel: Duel, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor):
+    """Insert a duel into the duels table.
+
+    Args:
+        duel: Info about the duel.
+        clan_affiliation_id: Clan affiliation id of primary clan member who participated in the duel.
+        river_race_id: Id of river race in which duel took place.
+        cursor: Cursor to use to insert the duel.
+    """
     duel_dict = {
         "clan_affiliation_id": clan_affiliation_id,
         "river_race_id": river_race_id,
@@ -1527,6 +1552,14 @@ def insert_duel(duel: Duel, clan_affiliation_id: int, river_race_id: int, cursor
 
 
 def insert_boat_battle(boat_battle: BoatBattle, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor):
+    """Insert a boat battle into the boat_battles table.
+
+    Args:
+        boat_battle: Info about the boat battle.
+        clan_affiliation_id: Clan affiliation id of primary clan member who participated in the boat battle.
+        river_race_id: Id of river race in which boat battle took place.
+        cursor: Cursor to use to insert the boat battle.
+    """
     boat_dict = {
         "clan_affiliation_id": clan_affiliation_id,
         "river_race_id": river_race_id,

@@ -2,7 +2,7 @@
 --
 -- Host: localhost    Database: ClashRoyaleManager
 -- ------------------------------------------------------
--- Server version	8.0.33-0ubuntu0.20.04.1
+-- Server version	8.0.33-0ubuntu0.20.04.2
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -26,6 +26,7 @@ CREATE TABLE `boat_battles` (
   `id` int NOT NULL AUTO_INCREMENT,
   `clan_affiliation_id` int NOT NULL,
   `river_race_id` int NOT NULL,
+  `time` timestamp NOT NULL,
   `deck_id` int NOT NULL,
   `elixir_leaked` float NOT NULL,
   `new_towers_destroyed` tinyint NOT NULL,
@@ -131,6 +132,24 @@ CREATE TABLE `clans` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `deck_card`
+--
+
+DROP TABLE IF EXISTS `deck_card`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `deck_card` (
+  `deck_id` int NOT NULL,
+  `card_id` int NOT NULL,
+  `card_level` tinyint NOT NULL,
+  PRIMARY KEY (`deck_id`,`card_id`),
+  KEY `card_id` (`card_id`),
+  CONSTRAINT `deck_card_ibfk_1` FOREIGN KEY (`deck_id`) REFERENCES `decks` (`id`),
+  CONSTRAINT `deck_card_ibfk_2` FOREIGN KEY (`card_id`) REFERENCES `cards` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `decks`
 --
 
@@ -139,39 +158,7 @@ DROP TABLE IF EXISTS `decks`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `decks` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `card_1` int NOT NULL,
-  `card_1_level` tinyint NOT NULL,
-  `card_2` int NOT NULL,
-  `card_2_level` tinyint NOT NULL,
-  `card_3` int NOT NULL,
-  `card_3_level` tinyint NOT NULL,
-  `card_4` int NOT NULL,
-  `card_4_level` tinyint NOT NULL,
-  `card_5` int NOT NULL,
-  `card_5_level` tinyint NOT NULL,
-  `card_6` int NOT NULL,
-  `card_6_level` tinyint NOT NULL,
-  `card_7` int NOT NULL,
-  `card_7_level` tinyint NOT NULL,
-  `card_8` int NOT NULL,
-  `card_8_level` tinyint NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `card_1` (`card_1`,`card_1_level`,`card_2`,`card_2_level`,`card_3`,`card_3_level`,`card_4`,`card_4_level`,`card_5`,`card_5_level`,`card_6`,`card_6_level`,`card_7`,`card_7_level`,`card_8`,`card_8_level`),
-  KEY `card_2` (`card_2`),
-  KEY `card_3` (`card_3`),
-  KEY `card_4` (`card_4`),
-  KEY `card_5` (`card_5`),
-  KEY `card_6` (`card_6`),
-  KEY `card_7` (`card_7`),
-  KEY `card_8` (`card_8`),
-  CONSTRAINT `decks_ibfk_1` FOREIGN KEY (`card_1`) REFERENCES `cards` (`id`),
-  CONSTRAINT `decks_ibfk_2` FOREIGN KEY (`card_2`) REFERENCES `cards` (`id`),
-  CONSTRAINT `decks_ibfk_3` FOREIGN KEY (`card_3`) REFERENCES `cards` (`id`),
-  CONSTRAINT `decks_ibfk_4` FOREIGN KEY (`card_4`) REFERENCES `cards` (`id`),
-  CONSTRAINT `decks_ibfk_5` FOREIGN KEY (`card_5`) REFERENCES `cards` (`id`),
-  CONSTRAINT `decks_ibfk_6` FOREIGN KEY (`card_6`) REFERENCES `cards` (`id`),
-  CONSTRAINT `decks_ibfk_7` FOREIGN KEY (`card_7`) REFERENCES `cards` (`id`),
-  CONSTRAINT `decks_ibfk_8` FOREIGN KEY (`card_8`) REFERENCES `cards` (`id`)
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -186,6 +173,7 @@ CREATE TABLE `duels` (
   `id` int NOT NULL AUTO_INCREMENT,
   `clan_affiliation_id` int NOT NULL,
   `river_race_id` int NOT NULL,
+  `time` timestamp NOT NULL,
   `won` tinyint(1) NOT NULL,
   `battle_wins` tinyint NOT NULL,
   `battle_losses` tinyint NOT NULL,
@@ -257,6 +245,7 @@ CREATE TABLE `pvp_battles` (
   `id` int NOT NULL AUTO_INCREMENT,
   `clan_affiliation_id` int NOT NULL,
   `river_race_id` int NOT NULL,
+  `time` timestamp NOT NULL,
   `game_type` varchar(50) NOT NULL,
   `won` tinyint(1) NOT NULL,
   `deck_id` int NOT NULL,
@@ -483,4 +472,4 @@ INSERT INTO `variables` VALUES (DEFAULT, DEFAULT);
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2023-05-11 15:38:36
+-- Dump completed on 2023-05-28  2:10:28

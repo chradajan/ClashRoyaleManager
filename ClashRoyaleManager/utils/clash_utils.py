@@ -26,8 +26,6 @@ from utils.custom_types import (
 )
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
-MAX_CARD_LEVEL = 14
-
 def process_clash_royale_tag(input: str) -> Union[str, None]:
     """Take a user's input and validate that it's a valid Supercell tag.
     
@@ -219,8 +217,14 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
         "clan_tag": json_obj["clan"]["tag"] if user_in_clan else None
     }
 
+    max_card_level = 0
+
     for card in json_obj["cards"]:
-        card_level = MAX_CARD_LEVEL - (card["maxLevel"] - card["level"])
+        if card["maxLevel"] > max_card_level:
+            max_card_level = card["maxLevel"]
+
+    for card in json_obj["cards"]:
+        card_level = max_card_level - (card["maxLevel"] - card["level"])
         clash_data["cards"][card_level] += 1
         clash_data["found_cards"] += 1
 
