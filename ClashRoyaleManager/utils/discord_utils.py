@@ -20,7 +20,8 @@ from utils.channel_manager import CHANNEL
 from utils.role_manager import ROLE
 
 def full_discord_name(member: discord.Member) -> str:
-    """Get the full username of a Discord member. This includes username and discriminator.
+    """Get a Discord user's username. If they've migrated to a unique username, return that. Otherwise return their name and
+       discriminator.
 
     Args:
         member: Member to get full name of.
@@ -28,7 +29,10 @@ def full_discord_name(member: discord.Member) -> str:
     Returns:
         Specified member's full name.
     """
-    return member.name + '#' + member.discriminator
+    if member.discriminator == "0":
+        return member.name
+    else:
+        return member.name + '#' + member.discriminator
 
 
 async def assign_roles(member: discord.Member):
