@@ -132,20 +132,20 @@ CREATE TABLE `clans` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `deck_card`
+-- Table structure for table `deck_cards`
 --
 
-DROP TABLE IF EXISTS `deck_card`;
+DROP TABLE IF EXISTS `deck_cards`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `deck_card` (
+CREATE TABLE `deck_cards` (
   `deck_id` int NOT NULL,
   `card_id` int NOT NULL,
   `card_level` tinyint NOT NULL,
   PRIMARY KEY (`deck_id`,`card_id`),
   KEY `card_id` (`card_id`),
-  CONSTRAINT `deck_card_ibfk_1` FOREIGN KEY (`deck_id`) REFERENCES `decks` (`id`),
-  CONSTRAINT `deck_card_ibfk_2` FOREIGN KEY (`card_id`) REFERENCES `cards` (`id`)
+  CONSTRAINT `deck_cards_ibfk_1` FOREIGN KEY (`deck_id`) REFERENCES `decks` (`id`),
+  CONSTRAINT `deck_cards_ibfk_2` FOREIGN KEY (`card_id`) REFERENCES `cards` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

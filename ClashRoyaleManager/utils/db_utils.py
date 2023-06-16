@@ -1453,7 +1453,7 @@ def insert_deck(deck: List[Card], cursor: pymysql.cursors.DictCursor) -> int:
     cursor.execute("SELECT deck_id,\
                            GROUP_CONCAT(card_id ORDER BY card_id) AS cards,\
                            GROUP_CONCAT(card_level ORDER BY card_id) AS card_levels\
-                    FROM deck_card\
+                    FROM deck_cards\
                     GROUP BY deck_id\
                     HAVING cards = %s AND card_levels = %s",
                    (card_id_str, card_level_str))
@@ -1469,7 +1469,7 @@ def insert_deck(deck: List[Card], cursor: pymysql.cursors.DictCursor) -> int:
             card["deck_id"] = deck_id
             card["level_offset"] = card["level"] - card["max_level"]
 
-        cursor.executemany("INSERT INTO deck_card VALUES (%(deck_id)s, %(id)s, %(level_offset)s)", deck)
+        cursor.executemany("INSERT INTO deck_cards VALUES (%(deck_id)s, %(id)s, %(level_offset)s)", deck)
     else:
         deck_id = query_result["deck_id"]
 
