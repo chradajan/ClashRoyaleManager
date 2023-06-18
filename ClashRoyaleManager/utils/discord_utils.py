@@ -696,6 +696,9 @@ def create_deck_images(decks: List[Set[int]]) -> List[str]:
     """
     card_images = []
 
+    if not os.path.exists(DECK_IMAGES_PATH):
+        os.makedirs(DECK_IMAGES_PATH)
+
     for i, deck in enumerate(decks, start=1):
         card_images.append(create_deck_image(deck, str(i)))
 
