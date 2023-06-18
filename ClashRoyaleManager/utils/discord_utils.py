@@ -1,6 +1,9 @@
 """Various utility functions for Discord related needs."""
 
-from typing import List, Optional, Tuple, Union
+import cv2
+import numpy as np
+import os
+from typing import List, Optional, Set, Tuple, Union
 
 import discord
 from prettytable import PrettyTable
@@ -8,6 +11,7 @@ from prettytable import PrettyTable
 import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from log.logger import LOG, log_message
+from statistics.deck_stats import CARD_INFO, Deck
 from utils.custom_types import (
     ClashData,
     PredictedOutcome,
@@ -18,6 +22,9 @@ from utils.custom_types import (
 from utils.exceptions import GeneralAPIError
 from utils.channel_manager import CHANNEL
 from utils.role_manager import ROLE
+
+CARD_IMAGES_PATH = "card_images"
+DECK_IMAGES_PATH = "deck_images"
 
 def full_discord_name(member: discord.Member) -> str:
     """Get a Discord user's username. If they've migrated to a unique username, return that. Otherwise return their name and
@@ -615,3 +622,137 @@ def create_card_levels_embed(clash_data: ClashData) -> discord.Embed:
 
     embed.add_field(name="Card Levels", value=f"```{card_level_string}```", inline=False)
     return embed
+
+
+def create_deck_image(deck: Set[int], output_name: str) -> str:
+    """Given a set of card IDs, concatenate their pictures together horizontally into a single image.
+
+    Args:
+        deck: Set of card IDs.
+        output_name: Name of file to save merged image to.
+
+    Returns:
+        Path to merged image.
+    """
+    images = []
+    max_height = 0
+    max_width = 0
+    deck = list(deck)
+
+    deck.sort(key=lambda card_id: (CARD_INFO[card_id]["type"].value,
+                                   CARD_INFO[card_id]["rarity"].value,
+                                   CARD_INFO[card_id]["elixir"],
+                                   CARD_INFO[card_id]["name"]))
+
+    for card_id in deck:
+        card_image_path = os.path.join(CARD_IMAGES_PATH, f"{card_id}.png")
+        image = cv2.imread(card_image_path, cv2.IMREAD_UNCHANGED)
+        y,x = image[:,:,3].nonzero()
+        min_x = np.min(x)
+        min_y = np.min(y)
+        max_x = np.max(x)
+        max_y = np.max(y)
+
+        cropped_image = image[min_y:max_y, min_x:max_x]
+        images.append(cropped_image)
+
+        if images[-1].shape[0] > max_height:
+            max_height = images[-1].shape[0]
+
+        if images[-1].shape[1] > max_width:
+            max_width = images[-1].shape[1]
+
+    for i in range(len(images)):
+        image = images[i]
+
+        if image.shape[0] < max_height:
+            diff = max_height - image.shape[0]
+            top_height = diff // 2
+            bottom_height = diff // 2
+
+            if diff % 2 != 0:
+                bottom_height += 1
+
+            top_black = np.zeros((top_height, image.shape[1], 4))
+            bottom_black = np.zeros((bottom_height, image.shape[1], 4))
+            image = np.vstack((top_black, image, bottom_black))
+
+        images[i] = image
+
+    merged_image = np.concatenate(tuple(images), axis=1)
+    output_file_path = os.path.join(DECK_IMAGES_PATH, f"{output_name}.png")
+    cv2.imwrite(output_file_path, merged_image)
+    return output_file_path
+
+
+def create_deck_images(decks: List[Set[int]]) -> List[str]:
+    """Create a deck image for each deck in a list of decks.
+
+    Args:
+        decks: List of decks to create images for.
+
+    Returns:
+        List of paths of deck images corresponding to the order of the decks passed in.
+    """
+    card_images = []
+
+    for i, deck in enumerate(decks, start=1):
+        card_images.append(create_deck_image(deck, str(i)))
+
+    return card_images
+
+
+def deck_link(deck: Set[int]) -> str:
+    """Create a url that can be used to copy a Clash Royale deck.
+
+    Args:
+        deck: Set of IDs of cards in deck.
+
+    Returns:
+        URL of deck link.
+    """
+    url = "https://link.clashroyale.com/deck/en?deck="
+    url += ";".join(str(id) for id in sorted(deck))
+    return url
+
+
+def create_deck_embeds(interaction: discord.Interaction,
+                       decks: List[Deck],
+                       colors: List[Tuple[int, int, int]]=None) -> Tuple[List[discord.Embed], List[discord.File]]:
+    """Create a list of embeds to display a deck and its stats in a Discord embed.
+
+    Args:
+        interaction: Interaction from command that triggered this function call.
+        decks: List of decks to create embeds for.
+        colors: List of colors to make embeds. If not specified or if length does not match length of decks, use default color.
+
+    Returns:
+        List of embeds and the files containing the uploaded deck images.
+    """
+    if (colors is None) or (len(decks) != len(colors)):
+        discord_colors = [discord.Color.default()] * len(decks)
+    else:
+        discord_colors = [discord.Color.from_rgb(r,g,b) for r,g,b in colors]
+
+    deck_images = create_deck_images([deck.deck for deck in decks])
+    embeds: List[discord.Embed] = []
+    files: List[discord.File] = []
+
+    elixir_emoji = discord.utils.get(interaction.guild.emojis, name="avgelixir")
+    cycle_emoji = discord.utils.get(interaction.guild.emojis, name="4cardcycle")
+
+    for deck, image_path, color in zip(decks, deck_images, discord_colors):
+        url = deck_link(deck.deck)
+        file = discord.File(image_path, filename=os.path.basename(image_path))
+        files.append(file)
+
+        embed = discord.Embed(title=f"Win Rate: {deck.win_rate:.2%}    |    Matches Played: {deck.matches_played}",
+                              description=f"{str(elixir_emoji)} {deck.avg_elixir}   {str(cycle_emoji)} {deck.cycle_cost}",
+                              url=url,
+                              color=color)
+
+        embed.set_footer(text=f"Used by: {', '.join(deck.users)}")
+        embed.set_image(url="attachment://" + os.path.basename(image_path))
+        embeds.append(embed)
+
+    return (embeds, files)

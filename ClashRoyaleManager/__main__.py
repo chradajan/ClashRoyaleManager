@@ -11,6 +11,7 @@ from commands.context_menus import CONTEXT_MENUS
 from commands.leader_util_commands import LEADER_UTIL_COMMANDS
 from commands.river_race_commands import RIVER_RACE_COMMANDS
 from commands.setup_commands import SETUP_COMMANDS
+from commands.stat_commands import STAT_COMMANDS
 from commands.status_reports import STATUS_REPORT_COMMANDS
 from commands.strike_commands import STRIKE_COMMANDS
 from commands.update_commands import UPDATE_COMMANDS
@@ -40,6 +41,7 @@ def main():
         *CONTEXT_MENUS,
         *LEADER_UTIL_COMMANDS,
         *RIVER_RACE_COMMANDS,
+        *STAT_COMMANDS,
         *STATUS_REPORT_COMMANDS,
         *STRIKE_COMMANDS,
         *UPDATE_COMMANDS
