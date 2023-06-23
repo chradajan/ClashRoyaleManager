@@ -203,6 +203,20 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
     json_obj = req.json()
     user_in_clan = 'clan' in json_obj
 
+    max_card_level = 0
+
+    for card in json_obj["cards"]:
+        if card["maxLevel"] > max_card_level:
+            max_card_level = card["maxLevel"]
+
+    # Supercell decided to update the max card level without updating the API to reflect that, so this temporary workaround checks
+    # whether they've updated their API yet.
+    api_is_fixed = True
+
+    if max_card_level == 14:
+        max_card_level = 15
+        api_is_fixed = False
+
     clash_data: ClashData = {
         "tag": json_obj["tag"],
         "name": json_obj["name"],
@@ -210,23 +224,24 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
         "exp_level": json_obj["expLevel"],
         "trophies": json_obj["trophies"],
         "best_trophies": json_obj["bestTrophies"],
-        "cards": {i: 0 for i in range(1, 15)},
+        "cards": {i: 0 for i in range(1, max_card_level + 1)},
         "found_cards": 0,
         "total_cards": get_total_cards(),
         "clan_name": json_obj["clan"]["name"] if user_in_clan else None,
         "clan_tag": json_obj["clan"]["tag"] if user_in_clan else None
     }
 
-    max_card_level = 0
-
-    for card in json_obj["cards"]:
-        if card["maxLevel"] > max_card_level:
-            max_card_level = card["maxLevel"]
-
-    for card in json_obj["cards"]:
-        card_level = max_card_level - (card["maxLevel"] - card["level"])
-        clash_data["cards"][card_level] += 1
-        clash_data["found_cards"] += 1
+    # Workaround for broken API.
+    if not api_is_fixed:
+        for card in json_obj["cards"]:
+            card_level = max_card_level - (card["maxLevel"] + 1 - card["level"])
+            clash_data["cards"][card_level] += 1
+            clash_data["found_cards"] += 1
+    else:
+        for card in json_obj["cards"]:
+            card_level = max_card_level - (card["maxLevel"] - card["level"])
+            clash_data["cards"][card_level] += 1
+            clash_data["found_cards"] += 1
 
     LOG.info(log_message("User data: ", clash_data=clash_data))
     return clash_data

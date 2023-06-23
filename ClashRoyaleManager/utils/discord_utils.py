@@ -387,8 +387,9 @@ def get_player_report(tag: str, card_levels: bool) -> discord.Embed:
         found_cards = clash_data["found_cards"]
         card_level_string = ""
         percentile = 0
+        max_card_level = sorted(clash_data["cards"].keys())[-1]
 
-        for i in range(14, 0, -1):
+        for i in range(max_card_level, 0, -1):
             percentile += clash_data["cards"][i] / found_cards
             percentage = round(percentile * 100)
 
@@ -607,8 +608,9 @@ def create_card_levels_embed(clash_data: ClashData) -> discord.Embed:
     found_cards = clash_data["found_cards"]
     card_level_string = ""
     percentile = 0
+    max_card_level = sorted(clash_data["cards"].keys())[-1]
 
-    for i in range(14, 0, -1):
+    for i in range(max_card_level, 0, -1):
         percentile += clash_data["cards"][i] / found_cards
         percentage = round(percentile * 100)
 
