@@ -1268,11 +1268,12 @@ def get_medal_counts(tag: str) -> Dict[str, Tuple[int, datetime.datetime]]:
     return results
 
 
-def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]]):
+def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]], api_is_broken: bool):
     """Update users' Battle Day stats with their latest matches.
 
     Args:
         stats: List of tuples of users' stats and medal counts.
+        api_is_broken: Whether the API is currently reporting incorrect max card levels.
     """
     if not stats:
         return
@@ -1360,19 +1361,19 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]]):
                        user_stats)
 
         for battle in battles["pvp_battles"]:
-            insert_pvp_battle(battle, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor)
+            insert_pvp_battle(battle, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor, api_is_broken)
 
         for duel in battles["duels"]:
-            insert_duel(duel, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor)
+            insert_duel(duel, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor, api_is_broken)
 
         for boat_battle in battles["boat_battles"]:
-            insert_boat_battle(boat_battle, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor)
+            insert_boat_battle(boat_battle, user_stats["clan_affiliation_id"], user_stats["river_race_id"], cursor, api_is_broken)
 
     database.commit()
     database.close()
 
 
-def update_cards_in_database(cursor: Optional[pymysql.cursors.DictCursor]=None):
+def update_cards_in_database(cursor: Optional[pymysql.cursors.DictCursor]=None) -> bool:
     """Add any new cards that may have been added to the database and update any existing ones that have had their names, url, or
        max level changed.
 
@@ -1380,11 +1381,23 @@ def update_cards_in_database(cursor: Optional[pymysql.cursors.DictCursor]=None):
         cursor: Cursor used to interact with database. If not provided, will create a new one. Otherwise, use the one provided.
                 Caller is responsible for committing changes made by cursor if provided.
 
+    Returns:
+        TEMPORARY: Until Supercell fixes their API to account for level 15 cards, this function returns true if the highest detected
+                   level is still 14.
+
     Raises:
         GeneralAPIError: Something went wrong getting list of current cards from Clash Royale API.
     """
     close_connection = False
     current_cards = clash_utils.get_all_cards()
+
+    max_card_level = 0
+
+    for card in current_cards:
+        if card["max_level"] > max_card_level:
+            max_card_level = card["max_level"]
+
+    api_is_broken = max_card_level < 15
 
     if cursor is None:
         close_connection = True
@@ -1435,20 +1448,27 @@ def update_cards_in_database(cursor: Optional[pymysql.cursors.DictCursor]=None):
         database.commit()
         database.close()
 
+    return api_is_broken
 
-def insert_deck(deck: List[Card], cursor: pymysql.cursors.DictCursor) -> int:
+
+def insert_deck(deck: List[Card], cursor: pymysql.cursors.DictCursor, api_is_broken: bool) -> int:
     """Insert a deck into the decks table if it doesn't exist.
 
     Args:
         deck: List of Cards to insert.
         cursor: Cursor to use to insert deck.
+        api_is_broken: Whether the API is currently reporting incorrect max card levels.
 
     Returns:
         id of deck.
     """
     deck.sort(key=lambda x: x["id"])
     card_id_str = ",".join(str(card["id"]) for card in deck)
-    card_level_str = ",".join(str(card["level"] - card["max_level"]) for card in deck)
+
+    if api_is_broken:
+        card_level_str = ",".join(str(card["level"] - (card["max_level"] + 1)) for card in deck)
+    else:
+        card_level_str = ",".join(str(card["level"] - card["max_level"]) for card in deck)
 
     cursor.execute("SELECT deck_id,\
                            GROUP_CONCAT(card_id ORDER BY card_id) AS cards,\
@@ -1467,7 +1487,11 @@ def insert_deck(deck: List[Card], cursor: pymysql.cursors.DictCursor) -> int:
 
         for card in deck:
             card["deck_id"] = deck_id
-            card["level_offset"] = card["level"] - card["max_level"]
+
+            if api_is_broken:
+                card["level_offset"] = card["level"] - (card["max_level"] + 1)
+            else:
+                card["level_offset"] = card["level"] - card["max_level"]
 
         cursor.executemany("INSERT INTO deck_cards VALUES (%(deck_id)s, %(id)s, %(level_offset)s)", deck)
     else:
@@ -1476,7 +1500,7 @@ def insert_deck(deck: List[Card], cursor: pymysql.cursors.DictCursor) -> int:
     return deck_id
 
 
-def insert_pvp_battle(battle: PvPBattle, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor) -> int:
+def insert_pvp_battle(battle: PvPBattle, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor, api_is_broken: bool) -> int:
     """Insert an individual PvP battle into the pvp_battles table.
 
     Args:
@@ -1484,6 +1508,7 @@ def insert_pvp_battle(battle: PvPBattle, clan_affiliation_id: int, river_race_id
         clan_affiliation_id: Clan affiliation id of primary clan member who participated in the battle.
         river_race_id: Id of river race in which battle took place.
         cursor: Cursor to use to insert the battle.
+        api_is_broken: Whether the API is currently reporting incorrect max card levels.
 
     Returns:
         id of newly inserted PvP battle.
@@ -1494,13 +1519,13 @@ def insert_pvp_battle(battle: PvPBattle, clan_affiliation_id: int, river_race_id
         "time": battle["time"],
         "game_type": battle["game_type"],
         "won": battle["won"],
-        "deck_id": insert_deck(battle["team_results"]["deck"], cursor),
+        "deck_id": insert_deck(battle["team_results"]["deck"], cursor, api_is_broken),
         "crowns": battle["team_results"]["crowns"],
         "elixir_leaked": battle["team_results"]["elixir_leaked"],
         "kt_hit_points": battle["team_results"]["kt_hit_points"],
         "pt1_hit_points": battle["team_results"]["pt1_hit_points"],
         "pt2_hit_points": battle["team_results"]["pt2_hit_points"],
-        "opp_deck_id": insert_deck(battle["opponent_results"]["deck"], cursor),
+        "opp_deck_id": insert_deck(battle["opponent_results"]["deck"], cursor, api_is_broken),
         "opp_crowns": battle["opponent_results"]["crowns"],
         "opp_elixir_leaked": battle["opponent_results"]["elixir_leaked"],
         "opp_kt_hit_points": battle["opponent_results"]["kt_hit_points"],
@@ -1521,7 +1546,7 @@ def insert_pvp_battle(battle: PvPBattle, clan_affiliation_id: int, river_race_id
     return query_result["id"]
 
 
-def insert_duel(duel: Duel, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor):
+def insert_duel(duel: Duel, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor, api_is_broken: bool):
     """Insert a duel into the duels table.
 
     Args:
@@ -1529,6 +1554,7 @@ def insert_duel(duel: Duel, clan_affiliation_id: int, river_race_id: int, cursor
         clan_affiliation_id: Clan affiliation id of primary clan member who participated in the duel.
         river_race_id: Id of river race in which duel took place.
         cursor: Cursor to use to insert the duel.
+        api_is_broken: Whether the API is currently reporting incorrect max card levels.
     """
     duel_dict = {
         "clan_affiliation_id": clan_affiliation_id,
@@ -1543,7 +1569,7 @@ def insert_duel(duel: Duel, clan_affiliation_id: int, river_race_id: int, cursor
     }
 
     for i, battle in enumerate(duel["battles"], 1):
-        duel_dict[f"round_{i}"] = insert_pvp_battle(battle, clan_affiliation_id, river_race_id, cursor)
+        duel_dict[f"round_{i}"] = insert_pvp_battle(battle, clan_affiliation_id, river_race_id, cursor, api_is_broken)
 
     cursor.execute("INSERT INTO duels VALUES (\
                     DEFAULT, %(clan_affiliation_id)s, %(river_race_id)s, %(time)s, %(won)s,\
@@ -1551,7 +1577,7 @@ def insert_duel(duel: Duel, clan_affiliation_id: int, river_race_id: int, cursor
                    duel_dict)
 
 
-def insert_boat_battle(boat_battle: BoatBattle, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor):
+def insert_boat_battle(boat_battle: BoatBattle, clan_affiliation_id: int, river_race_id: int, cursor: pymysql.cursors.DictCursor, api_is_broken: bool):
     """Insert a boat battle into the boat_battles table.
 
     Args:
@@ -1559,12 +1585,13 @@ def insert_boat_battle(boat_battle: BoatBattle, clan_affiliation_id: int, river_
         clan_affiliation_id: Clan affiliation id of primary clan member who participated in the boat battle.
         river_race_id: Id of river race in which boat battle took place.
         cursor: Cursor to use to insert the boat battle.
+        api_is_broken: Whether the API is currently reporting incorrect max card levels.
     """
     boat_dict = {
         "clan_affiliation_id": clan_affiliation_id,
         "river_race_id": river_race_id,
         "time": boat_battle["time"],
-        "deck_id": insert_deck(boat_battle["deck"], cursor),
+        "deck_id": insert_deck(boat_battle["deck"], cursor, api_is_broken),
         "elixir_leaked": boat_battle["elixir_leaked"],
         "new_towers_destroyed": boat_battle["new_towers_destroyed"],
         "prev_towers_destroyed": boat_battle["prev_towers_destroyed"],
@@ -2498,3 +2525,67 @@ def export_all_clan_data(primary_only: bool, active_only: bool) -> str:
     database.close()
     workbook.close()
     return path
+
+
+def fix_deck_ids():
+    """Workaround to fixing decks in database that incorrectly calculated relative card levels due to a bug in Supercell's API."""
+    database, cursor = get_database_connection()
+
+    old_decks_query = """
+        SELECT deck_id,
+               Group_concat(card_id ORDER BY card_id)    AS card_ids,
+               Group_concat(card_level ORDER BY card_id) AS card_levels
+        FROM   deck_cards
+        WHERE  deck_id NOT IN (SELECT deck_id
+                               FROM   deck_cards
+                               WHERE  deck_id IN (SELECT deck_id
+                                                  FROM   pvp_battles
+                                                  WHERE  time > Date_sub(Now(), INTERVAL 14 day))
+                                       OR deck_id IN (SELECT opp_deck_id
+                                                      FROM   pvp_battles
+                                                      WHERE  time > Date_sub(Now(), INTERVAL 14 day))
+                               GROUP  BY deck_id)
+        GROUP  BY deck_id
+    """
+
+    new_decks_query = """
+        SELECT deck_id,
+               Group_concat(card_id ORDER BY card_id)    AS card_ids,
+               Group_concat(card_level ORDER BY card_id) AS card_levels
+        FROM   deck_cards
+        WHERE  deck_id IN (SELECT deck_id
+                           FROM   pvp_battles
+                           WHERE  time > Date_sub(Now(), INTERVAL 14 day))
+                OR deck_id IN (SELECT opp_deck_id
+                               FROM   pvp_battles
+                               WHERE  time > Date_sub(Now(), INTERVAL 14 day))
+        GROUP  BY deck_id
+    """
+
+    cursor.execute(old_decks_query)
+    query_result = cursor.fetchall()
+    old_decks: Dict[Tuple[str, str], int] = {}
+
+    for deck in query_result:
+        key = (deck["card_ids"], deck["card_levels"])
+        old_decks[key] = deck["deck_id"]
+
+    cursor.execute(new_decks_query)
+    query_result = cursor.fetchall()
+
+    for deck in query_result:
+        incorrect_levels = deck["card_levels"]
+        corrected_levels = ",".join([str(int(card_id) - 1) for card_id in incorrect_levels.split(",")])
+        key = (deck["card_ids"], corrected_levels)
+
+        if key in old_decks:
+            print(f"Replacing {deck['deck_id']} with {old_decks[key]}")
+            cursor.execute("UPDATE pvp_battles SET deck_id = %s WHERE deck_id = %s", (old_decks[key], deck["deck_id"]))
+            cursor.execute("UPDATE pvp_battles SET opp_deck_id = %s WHERE opp_deck_id = %s", (old_decks[key], deck["deck_id"]))
+            cursor.execute("DELETE FROM deck_cards WHERE deck_id = %s", (deck["deck_id"]))
+        else:
+            print(f"Altering levels on deck {deck['deck_id']}")
+            cursor.execute("UPDATE deck_cards SET card_level = card_level - 1 WHERE deck_id = %s", (deck["deck_id"]))
+
+    database.commit()
+    database.close()

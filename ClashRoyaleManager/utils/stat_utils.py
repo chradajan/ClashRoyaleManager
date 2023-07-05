@@ -10,12 +10,13 @@ from log.logger import LOG, log_message
 from utils.custom_types import BattleStats, ClanStrikeInfo, DatabaseRiverRaceClan, PredictedOutcome, RiverRaceClan, StrikeType
 from utils.exceptions import GeneralAPIError
 
-def update_clan_battle_day_stats(tag: str, post_race: bool):
+def update_clan_battle_day_stats(tag: str, post_race: bool, api_is_broken: bool):
     """Check the battle logs of any users in a clan that have gained medals since the last check.
 
     Args:
         tag: Tag of clan to check users in.
         post_race: Whether this is occurring during or after a River Race.
+        api_is_broken: Whether the API is currently reporting incorrect max card levels.
     """
     db_utils.add_unregistered_users(tag)
 
@@ -67,7 +68,7 @@ def update_clan_battle_day_stats(tag: str, post_race: bool):
 
             stats_to_record.append((stats, battles, participant["medals"]))
 
-    db_utils.record_battle_day_stats(stats_to_record)
+    db_utils.record_battle_day_stats(stats_to_record, api_is_broken)
 
 
 def save_river_race_clans_info(tag: str, post_race: bool):

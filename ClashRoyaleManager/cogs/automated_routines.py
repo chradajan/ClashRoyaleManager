@@ -47,6 +47,7 @@ class AutomatedRoutines(commands.Cog):
                 LOG.automation_start("Checking reset time")
                 weekday = datetime.datetime.utcnow().weekday()
                 primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+                api_is_broken = db_utils.update_cards_in_database()
 
                 for tag in tags:
                     try:
@@ -72,7 +73,7 @@ class AutomatedRoutines(commands.Cog):
                         if weekday == 3:
                             db_utils.prepare_for_battle_days(tag)
                         elif weekday in {4, 5, 6} and primary_clans[tag]["track_stats"]:
-                            stat_utils.update_clan_battle_day_stats(tag, False)
+                            stat_utils.update_clan_battle_day_stats(tag, False, api_is_broken)
                             stat_utils.save_river_race_clans_info(tag, False)
 
                         db_utils.record_deck_usage_today(tag, weekday, AutomatedRoutines.LAST_DECK_USAGE[tag])
@@ -93,6 +94,7 @@ class AutomatedRoutines(commands.Cog):
 
                 tags = [tag for tag, reset_occurred in AutomatedRoutines.RESET_OCCURRED.items() if not reset_occurred]
                 primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+                api_is_broken = db_utils.update_cards_in_database()
 
                 if tags:
                     weekday = datetime.datetime.utcnow().weekday()
@@ -120,7 +122,7 @@ class AutomatedRoutines(commands.Cog):
                     if weekday == 3:
                         db_utils.prepare_for_battle_days(tag)
                     elif weekday in {4, 5, 6} and primary_clans[tag]["track_stats"]:
-                        stat_utils.update_clan_battle_day_stats(tag, False)
+                        stat_utils.update_clan_battle_day_stats(tag, False, api_is_broken)
                         stat_utils.save_river_race_clans_info(tag, False)
 
                     db_utils.record_deck_usage_today(tag, weekday, deck_usage)
@@ -141,10 +143,11 @@ class AutomatedRoutines(commands.Cog):
             try:
                 LOG.automation_start("Starting end of race checks")
                 primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+                api_is_broken = db_utils.update_cards_in_database()
 
                 for tag, clan in primary_clans.items():
                     if clan["track_stats"]:
-                        stat_utils.update_clan_battle_day_stats(tag, True)
+                        stat_utils.update_clan_battle_day_stats(tag, True, api_is_broken)
                         stat_utils.save_river_race_clans_info(tag, True)
 
                 if clash_utils.is_first_day_of_season():
@@ -164,12 +167,12 @@ class AutomatedRoutines(commands.Cog):
             try:
                 LOG.automation_start("Starting evening Battle Day stats check")
                 db_utils.clean_up_database()
-                db_utils.update_cards_in_database()
+                api_is_broken = db_utils.update_cards_in_database()
                 primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
                 for tag, clan in primary_clans.items():
                     if clan["track_stats"]:
-                        stat_utils.update_clan_battle_day_stats(tag, False)
+                        stat_utils.update_clan_battle_day_stats(tag, False, api_is_broken)
 
                 LOG.automation_end()
             except Exception as e:
@@ -182,12 +185,12 @@ class AutomatedRoutines(commands.Cog):
             try:
                 LOG.automation_start("Starting morning Battle Day stats check")
                 db_utils.clean_up_database()
-                db_utils.update_cards_in_database()
+                api_is_broken = db_utils.update_cards_in_database()
                 primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
                 for tag, clan in primary_clans.items():
                     if clan["track_stats"]:
-                        stat_utils.update_clan_battle_day_stats(tag, False)
+                        stat_utils.update_clan_battle_day_stats(tag, False, api_is_broken)
 
                 LOG.automation_end()
             except Exception as e:
