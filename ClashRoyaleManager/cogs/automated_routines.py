@@ -150,15 +150,16 @@ class AutomatedRoutines(commands.Cog):
                         stat_utils.update_clan_battle_day_stats(tag, True, api_is_broken)
                         stat_utils.save_river_race_clans_info(tag, True)
 
-                if clash_utils.is_first_day_of_season():
-                    db_utils.create_new_season()
-
-                for tag in primary_clans:
-                    db_utils.prepare_for_river_race(tag)
-
-                LOG.automation_end()
             except Exception as e:
                 LOG.exception(e)
+
+            if clash_utils.is_first_day_of_season():
+                    db_utils.create_new_season()
+
+            for tag in primary_clans:
+                db_utils.prepare_for_river_race(tag)
+
+            LOG.automation_end()
 
 
         @aiocron.crontab('0 10-23 * * 4,5,6,0')
