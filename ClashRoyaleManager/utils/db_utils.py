@@ -183,7 +183,7 @@ def update_clan_affiliation(clash_data: ClashData, cursor: Optional[pymysql.curs
 
                         if blocked_day_key is not None:
                             blocked_day_key = blocked_day_key + "_blocked"
-                            query = (f"UPDATE river_race_user_data SET {blocked_day_key} = %s "
+                            query = (f"UPDATE river_race_user_data SET {blocked_day_key} = %s, last_check = last_check "
                                      "WHERE clan_affiliation_id = %s AND river_race_id = %s")
 
                             cursor.execute(query,
