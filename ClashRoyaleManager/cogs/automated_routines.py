@@ -89,11 +89,12 @@ class AutomatedRoutines(commands.Cog):
         @aiocron.crontab('59 9 * * *')
         async def final_reset_time_check():
             """Perform daily reset routine if not already performed and reset tracking variables."""
+            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+
             try:
                 LOG.automation_start("Final reset time check")
 
                 tags = [tag for tag, reset_occurred in AutomatedRoutines.RESET_OCCURRED.items() if not reset_occurred]
-                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
                 api_is_broken = db_utils.update_cards_in_database()
 
                 if tags:
@@ -127,14 +128,15 @@ class AutomatedRoutines(commands.Cog):
 
                     db_utils.record_deck_usage_today(tag, weekday, deck_usage)
 
-                for tag in primary_clans:
+            except Exception as e:
+                LOG.exception(e)
+
+            for tag in primary_clans:
                     AutomatedRoutines.RESET_OCCURRED[tag] = False
                     AutomatedRoutines.LAST_CHECK_SUM[tag] = -1
                     AutomatedRoutines.LAST_DECK_USAGE[tag] = {}
 
-                LOG.automation_end()
-            except Exception as e:
-                LOG.exception(e)
+            LOG.automation_end()
 
 
         @aiocron.crontab('0 10 * * 1')
