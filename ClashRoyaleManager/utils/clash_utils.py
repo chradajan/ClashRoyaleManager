@@ -591,30 +591,36 @@ def get_prior_river_race_participants(tag: str, force: bool=True) -> List[Partic
     return get_prior_river_race_participants.cached_data[tag]
 
 
-def get_deck_usage_today(tag: str) -> Dict[str, int]:
-    """Get a dictionary of users in a clan and how many decks they've used today.
+def get_deck_usage_today(tag: str, post_race: bool) -> Dict[str, Tuple[int, int]]:
+    """Get a dictionary of users in a clan and how many decks they've used today and in the current River Race.
 
     Args:
         tag: Tag of clan to get deck usage in.
+        post_race: Whether to get info of current River Race or most recent one.
 
     Returns:
-        Dictionary mapping player tags to deck usage today.
+        Dictionary mapping player tags to tuple of deck usage today and total deck usage.
 
     Raises:
         GeneralAPIError: Something went wrong with the request.
         ResourceNotFound: Invalid tag was provided.
     """
     LOG.info(f"Getting dictionary of users and how many decks they've used in clan {tag}")
-    participants = get_river_race_participants(tag, True)
+
+    if post_race:
+        participants = get_prior_river_race_participants(tag)
+    else:
+        participants = get_river_race_participants(tag, True)
+
     active_members = get_active_members_in_clan(tag, True).copy()
     deck_usage = {}
 
     for participant in participants:
-        deck_usage[participant["tag"]] = participant["decks_used_today"]
+        deck_usage[participant["tag"]] = (participant["decks_used_today"], participant["decks_used"])
         active_members.pop(participant["tag"], None)
 
     for tag in active_members:
-        deck_usage[tag] = 0
+        deck_usage[tag] = (0, 0)
 
     return deck_usage
 

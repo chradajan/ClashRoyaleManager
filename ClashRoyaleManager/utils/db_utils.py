@@ -1147,14 +1147,14 @@ def set_clan_reset_time(tag: str, weekday: int):
     database.close()
 
 
-def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
+def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, Tuple[int, int]]):
     """Log daily deck usage for each member of a clan and record reset time.
 
     Args:
         tag: Tag of clan to log deck usage for.
         weekday: Which day usage is being logged on.
         reset_time: Time that daily reset occurred.
-        deck_usage: Dictionary of player tags mapped to their decks used today in the specified clan.
+        deck_usage: Dictionary of player tags mapped to their decks used today and total decks used in the specified clan.
     """
     river_race_id, clan_id, _, _ = get_clan_river_race_ids(tag)
 
@@ -1198,9 +1198,9 @@ def record_deck_usage_today(tag: str, weekday: int, deck_usage: Dict[str, int]):
         "blocked_reason": None
     }
 
-    max_participation = len([decks_used for decks_used in deck_usage.values() if decks_used > 0]) == 50
+    max_participation = len([decks_used for (decks_used, _) in deck_usage.values() if decks_used > 0]) == 50
 
-    for player_tag, decks_used in deck_usage.items():
+    for player_tag, (decks_used, _) in deck_usage.items():
         cursor.execute("SELECT id FROM users WHERE tag = %s", (player_tag))
         query_result = cursor.fetchone()
 
@@ -1904,6 +1904,66 @@ def get_strike_count(id: int) -> int:
         return 0
 
     return query_result["strikes"]
+
+
+def remedy_deck_usage(tag: str,
+                      weekday: int,
+                      pre_reset_usage: Dict[str, Tuple[int, int]],
+                      post_reset_usage: Dict[str, Tuple[int, int]]):
+    """Fix any situations where a user completed a River Race battle in between the two final reset time checks.
+
+    Args:
+        tag: Tag of clan to fix deck usage for.
+        weekday: Which day to update.
+        pre_reset_usage: Saved deck usage immediately before daily reset.
+        post_reset_usage: Saved deck usage immediately after daily reset.
+    """
+    database, cursor = get_database_connection()
+    river_race_id, clan_id, _, _ = get_clan_river_race_ids(tag)
+
+    if weekday:
+        day_key = f"day_{weekday}"
+    else:
+        day_key = "day_7"
+
+    for player_tag, (decks_used_today, decks_used) in pre_reset_usage.items():
+        if (player_tag in post_reset_usage
+                and decks_used_today < 4
+                and post_reset_usage[player_tag][0] == 0
+                and post_reset_usage[player_tag][1] > decks_used):
+            actual_decks_used_today = decks_used_today + (post_reset_usage[player_tag][1] - decks_used)
+
+            LOG.info(log_message("Remedying daily deck usage",
+                                 player_tag=player_tag,
+                                 clan_tag=tag,
+                                 weekday=day_key,
+                                 river_race_id=river_race_id,
+                                 clan_id=clan_id,
+                                 pre_decks_used_today=decks_used_today,
+                                 pre_decks_used=decks_used,
+                                 post_decks_used_today=post_reset_usage[player_tag][0],
+                                 post_decks_used=post_reset_usage[player_tag][1],
+                                 actual_decks_used_today=actual_decks_used_today))
+
+            if actual_decks_used_today > 4:
+                LOG.warning("Skipping daily deck usage update due to excessive decks used today.")
+                continue
+
+            cursor.execute("SELECT id FROM clan_affiliations WHERE clan_id = %s AND user_id = (SELECT id FROM users WHERE tag = %s)",
+                           (clan_id, player_tag))
+            query_result = cursor.fetchone()
+
+            if query_result is None:
+                LOG.warning("Skipping daily deck usage update due to not finding relevant clan affiliation.")
+                continue
+
+            clan_affiliation_id = query_result["id"]
+            query = (f"UPDATE river_race_user_data SET {day_key} = %s, last_check = last_check "
+                     "WHERE clan_affiliation_id = %s AND river_race_id = %s")
+            cursor.execute(query, (actual_decks_used_today, clan_affiliation_id, river_race_id))
+
+    database.commit()
+    database.close()
 
 
 ##############################

@@ -1,7 +1,7 @@
 """Automated routines cog."""
 
 import datetime
-from typing import Dict
+from typing import Dict, Tuple
 
 import aiocron
 import discord
@@ -13,7 +13,7 @@ import utils.discord_utils as discord_utils
 import utils.stat_utils as stat_utils
 from log.logger import LOG
 from utils.channel_manager import CHANNEL
-from utils.custom_types import PrimaryClan, ReminderTime, SpecialChannel, StrikeType
+from utils.custom_types import ReminderTime, SpecialChannel, StrikeType
 from utils.exceptions import GeneralAPIError
 
 class AutomatedRoutines(commands.Cog):
@@ -23,7 +23,8 @@ class AutomatedRoutines(commands.Cog):
     # Reset time check variables
     RESET_OCCURRED: Dict[str, bool] = {}
     LAST_CHECK_SUM: Dict[str, int] = {}
-    LAST_DECK_USAGE: Dict[str, Dict[str, int]] = {}
+    LAST_DECK_USAGE: Dict[str, Dict[str, Tuple[int, int]]] = {}
+    POST_RESET_USAGE: Dict[str, Dict[str, Tuple[int, int]]] = {}
 
     def __init__(self, guild: discord.Guild):
         """Save bot for access to the guild object."""
@@ -33,6 +34,7 @@ class AutomatedRoutines(commands.Cog):
             AutomatedRoutines.RESET_OCCURRED[clan["tag"]] = False
             AutomatedRoutines.LAST_CHECK_SUM[clan["tag"]] = -1
             AutomatedRoutines.LAST_DECK_USAGE[clan["tag"]] = {}
+            AutomatedRoutines.POST_RESET_USAGE[clan["tag"]] = {}
 
 
         @aiocron.crontab('20-58 9 * * *')
@@ -51,15 +53,17 @@ class AutomatedRoutines(commands.Cog):
 
                 for tag in tags:
                     try:
-                        deck_usage = clash_utils.get_deck_usage_today(tag)
+                        deck_usage = clash_utils.get_deck_usage_today(tag, False)
                     except GeneralAPIError:
                         LOG.warning(f"Skipping reset time check for {tag}")
                         continue
 
-                    usage_sum = sum(deck_usage.values())
+                    usage_sum = sum([decks_used_today for decks_used_today, _ in deck_usage.values()])
 
                     if usage_sum < AutomatedRoutines.LAST_CHECK_SUM[tag]:
                         LOG.info(f"Daily reset detected for clan {tag}")
+
+                        AutomatedRoutines.POST_RESET_USAGE[tag] = deck_usage
 
                         try:
                             db_utils.clean_up_database()
@@ -109,16 +113,18 @@ class AutomatedRoutines(commands.Cog):
                     LOG.warning(f"Daily reset not detected for clan {tag}")
 
                     try:
-                        deck_usage = clash_utils.get_deck_usage_today(tag)
+                        deck_usage = clash_utils.get_deck_usage_today(tag, False)
                     except GeneralAPIError:
                         LOG.warning(f"Skipping final reset time check for {tag}")
                         db_utils.set_clan_reset_time(tag, weekday)
                         continue
 
-                    usage_sum = sum(deck_usage.values())
+                    usage_sum = sum([decks_used_today for decks_used_today, _ in deck_usage.values()])
 
                     if usage_sum > AutomatedRoutines.LAST_CHECK_SUM[tag]:
                         deck_usage = AutomatedRoutines.LAST_DECK_USAGE[tag]
+
+                    AutomatedRoutines.POST_RESET_USAGE[tag] = deck_usage
 
                     if weekday == 3:
                         db_utils.prepare_for_battle_days(tag)
@@ -131,10 +137,25 @@ class AutomatedRoutines(commands.Cog):
             except Exception as e:
                 LOG.exception(e)
 
+            LOG.automation_end()
+
+
+        @aiocron.crontab('0 10 * * 0,2-6')
+        async def end_of_day():
+            LOG.automation_start("Performing end of day routine")
+            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            weekday = datetime.datetime.utcnow().weekday()
+
             for tag in primary_clans:
-                    AutomatedRoutines.RESET_OCCURRED[tag] = False
-                    AutomatedRoutines.LAST_CHECK_SUM[tag] = -1
-                    AutomatedRoutines.LAST_DECK_USAGE[tag] = {}
+                db_utils.remedy_deck_usage(tag,
+                                           weekday,
+                                           AutomatedRoutines.LAST_DECK_USAGE[tag],
+                                           AutomatedRoutines.POST_RESET_USAGE[tag])
+
+                AutomatedRoutines.RESET_OCCURRED[tag] = False
+                AutomatedRoutines.LAST_CHECK_SUM[tag] = -1
+                AutomatedRoutines.LAST_DECK_USAGE[tag] = {}
+                AutomatedRoutines.POST_RESET_USAGE[tag] = {}
 
             LOG.automation_end()
 
@@ -142,9 +163,25 @@ class AutomatedRoutines(commands.Cog):
         @aiocron.crontab('0 10 * * 1')
         async def end_of_race_check():
             """Perform final stats checks after River Race and create new River Race entries."""
+            LOG.automation_start("Starting end of race checks")
+            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            weekday = datetime.datetime.utcnow().weekday()
+
+            for tag in primary_clans:
+                try:
+                    db_utils.remedy_deck_usage(tag,
+                                               weekday,
+                                               AutomatedRoutines.LAST_DECK_USAGE[tag],
+                                               clash_utils.get_deck_usage_today(tag, True))
+                except Exception as e:
+                    LOG.exception(e)
+
+                AutomatedRoutines.RESET_OCCURRED[tag] = False
+                AutomatedRoutines.LAST_CHECK_SUM[tag] = -1
+                AutomatedRoutines.LAST_DECK_USAGE[tag] = {}
+                AutomatedRoutines.POST_RESET_USAGE[tag] = {}
+
             try:
-                LOG.automation_start("Starting end of race checks")
-                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
                 api_is_broken = db_utils.update_cards_in_database()
 
                 for tag, clan in primary_clans.items():
@@ -156,7 +193,7 @@ class AutomatedRoutines(commands.Cog):
                 LOG.exception(e)
 
             if clash_utils.is_first_day_of_season():
-                    db_utils.create_new_season()
+                db_utils.create_new_season()
 
             for tag in primary_clans:
                 db_utils.prepare_for_river_race(tag)
