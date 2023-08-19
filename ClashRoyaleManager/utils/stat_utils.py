@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple, Union
 import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from log.logger import LOG, log_message
-from utils.custom_types import BattleStats, ClanStrikeInfo, DatabaseRiverRaceClan, PredictedOutcome, RiverRaceClan, StrikeType
+from utils.custom_types import Battles, BattleStats, ClanStrikeInfo, DatabaseRiverRaceClan, PredictedOutcome, RiverRaceClan, StrikeType
 from utils.exceptions import GeneralAPIError
 
 def update_clan_battle_day_stats(tag: str, post_race: bool, api_is_broken: bool):
@@ -32,7 +32,7 @@ def update_clan_battle_day_stats(tag: str, post_race: bool, api_is_broken: bool)
     if post_race:
         current_time = db_utils.get_most_recent_reset_time(tag)
 
-    stats_to_record: List[BattleStats] = []
+    stats_to_record: List[Tuple[BattleStats, Battles, int]] = []
 
     for participant in participants:
         player_tag = participant["tag"]
@@ -68,7 +68,7 @@ def update_clan_battle_day_stats(tag: str, post_race: bool, api_is_broken: bool)
 
             stats_to_record.append((stats, battles, participant["medals"]))
 
-    db_utils.record_battle_day_stats(stats_to_record, api_is_broken)
+    db_utils.record_battle_day_stats(stats_to_record, current_time, api_is_broken)
 
 
 def save_river_race_clans_info(tag: str, post_race: bool):

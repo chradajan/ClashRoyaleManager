@@ -1268,11 +1268,12 @@ def get_medal_counts(tag: str) -> Dict[str, Tuple[int, datetime.datetime]]:
     return results
 
 
-def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]], api_is_broken: bool):
+def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]], last_check: datetime.datetime, api_is_broken: bool):
     """Update users' Battle Day stats with their latest matches.
 
     Args:
         stats: List of tuples of users' stats and medal counts.
+        last_check: Value to update users' last_check times to.
         api_is_broken: Whether the API is currently reporting incorrect max card levels.
     """
     if not stats:
@@ -1291,6 +1292,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]], api_i
         user_stats["medals"] = medals
         user_stats["river_race_id"] = river_race_id
         user_stats["clan_id"] = clan_id
+        user_stats["last_check"] = last_check
         cursor.execute("SELECT id FROM users WHERE tag = %(player_tag)s", user_stats)
         query_result = cursor.fetchone()
 
@@ -1318,6 +1320,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]], api_i
         cursor.execute("INSERT INTO river_race_user_data (\
                             clan_affiliation_id,\
                             river_race_id,\
+                            last_check,\
                             tracked_since,\
                             medals,\
                             regular_wins,\
@@ -1333,6 +1336,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]], api_i
                         ) VALUES (\
                             %(clan_affiliation_id)s,\
                             %(river_race_id)s,\
+                            %(last_check)s,\
                             CURRENT_TIMESTAMP,\
                             %(medals)s,\
                             %(regular_wins)s,\
@@ -1346,6 +1350,7 @@ def record_battle_day_stats(stats: List[Tuple[BattleStats, Battles, int]], api_i
                             %(boat_wins)s,\
                             %(boat_losses)s\
                         ) ON DUPLICATE KEY UPDATE\
+                            last_check = %(last_check)s,\
                             tracked_since = COALESCE(tracked_since, CURRENT_TIMESTAMP),\
                             medals = %(medals)s,\
                             regular_wins = regular_wins + %(regular_wins)s,\
