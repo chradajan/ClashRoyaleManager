@@ -42,7 +42,7 @@ from utils.custom_types import (
     SpecialRole,
     StrikeType,
 )
-from utils.exceptions import GeneralAPIError
+from utils.exceptions import GeneralAPIError, ResourceNotFound
 
 EXPORT_PATH = "export_data"
 CARD_IMAGE_PATH = "card_images"
@@ -281,6 +281,7 @@ def update_user(tag: str, discord_name: Optional[str]=None):
 
     Raises:
         GeneralAPIError: Something went wrong with the request.
+        ResourceNotFound: Invalid tag or the tag of a banned user was provided.
     """
     LOG.info(f"Updating user with tag {tag}")
     clash_data = clash_utils.get_clash_royale_user_data(tag)
@@ -305,6 +306,31 @@ def update_user(tag: str, discord_name: Optional[str]=None):
     database.commit()
     database.close()
     update_clan_affiliation(clash_data)
+
+
+def update_banned_user(tag: str):
+    """Remove any clan affiliations of a user that has been banned by SuperCell.
+
+    Args:
+        tag: Player tag of user to update.
+    """
+    LOG.info(f"Updating banned user with tag {tag}")
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT id FROM users WHERE tag = %s", (tag))
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        database.close()
+        return
+
+    user_id = query_result["id"]
+    cursor.execute("UPDATE users SET needs_update = FALSE WHERE id = %s", (user_id))
+    clash_data = {"user_id": user_id, "clan_tag": None}
+
+    update_clan_affiliation(clash_data, cursor)
+
+    database.commit()
+    database.close()
 
 
 def dissociate_discord_info_from_user(member: discord.Member):
@@ -422,6 +448,10 @@ def clean_up_database():
                 LOG.info("Updating user formerly in a primary clan")
                 update_user(player_tag)
             except GeneralAPIError:
+                continue
+            except ResourceNotFound:
+                LOG.warning(f"{player_tag} appears to be the tag of a banned user. Removing clan affiliation.")
+                update_banned_user(player_tag)
                 continue
 
     LOG.info("Database clean up complete")
