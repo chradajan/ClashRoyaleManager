@@ -972,7 +972,7 @@ def get_battle_day_stats(player_tag: str,
     return (stats, battles)
 
 
-def battled_for_other_clan(player_tag: str, clan_tag: str, time: datetime.datetime) -> bool:
+def battled_for_other_clan(player_tag: str, clan_tag: str, time: datetime.datetime) -> int:
     """Check if a user has already used war decks today for a different clan.
 
     Args:
@@ -981,7 +981,7 @@ def battled_for_other_clan(player_tag: str, clan_tag: str, time: datetime.dateti
         time: Check for decks used after this time.
 
     Returns:
-        Whether the specified user battled for a different clan today.
+        How many battles the user performed in other clans today.
     """
     LOG.info(log_message("Checking for previous war participation", player_tag=player_tag, clan_tag=clan_tag, time=time))
 
@@ -997,6 +997,7 @@ def battled_for_other_clan(player_tag: str, clan_tag: str, time: datetime.dateti
 
     time = time.replace(tzinfo=datetime.timezone.utc)
     battle_log = req.json()
+    used_battles = 0
 
     for battle in battle_log:
         battle_time = battletime_to_datetime(battle["battleTime"])
@@ -1004,9 +1005,9 @@ def battled_for_other_clan(player_tag: str, clan_tag: str, time: datetime.dateti
         if ((battle["type"].startswith("riverRace") or battle["type"] == "boatBattle")
                 and time < battle_time
                 and battle["team"][0]["clan"]["tag"] != clan_tag):
-            return True
+            used_battles += 1
 
-    return False
+    return used_battles
 
 
 def medals_report(tag: str, threshold: int) -> List[Tuple[str, int]]:

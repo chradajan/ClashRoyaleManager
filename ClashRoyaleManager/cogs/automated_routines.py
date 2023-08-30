@@ -15,6 +15,14 @@ from log.logger import LOG
 from utils.channel_manager import CHANNEL
 from utils.custom_types import ReminderTime, SpecialChannel, StrikeType
 from utils.exceptions import GeneralAPIError
+from utils.outside_battles_queue import UNSENT_WARNINGS
+
+async def drain_outside_battle_warnings():
+    """Send a warning message for each member who's joined after using battles in another clan."""
+    for (clash_data, outside_battles) in UNSENT_WARNINGS:
+        await discord_utils.send_outside_battles_warning(clash_data, outside_battles)
+
+    UNSENT_WARNINGS.clear()
 
 class AutomatedRoutines(commands.Cog):
     """Automated routines."""
@@ -201,7 +209,7 @@ class AutomatedRoutines(commands.Cog):
             LOG.automation_end()
 
 
-        @aiocron.crontab('0 10-23 * * 4,5,6,0')
+        @aiocron.crontab('0,15,30,45 10-23 * * 4,5,6,0')
         async def evening_stats_checker():
             """Check Battle Day stats hourly."""
             try:
@@ -214,12 +222,14 @@ class AutomatedRoutines(commands.Cog):
                     if clan["track_stats"]:
                         stat_utils.update_clan_battle_day_stats(tag, False, api_is_broken)
 
-                LOG.automation_end()
             except Exception as e:
                 LOG.exception(e)
 
+            await drain_outside_battle_warnings()
+            LOG.automation_end()
 
-        @aiocron.crontab('0 0-9 * * 5,6,0,1')
+
+        @aiocron.crontab('0,15,30,45 0-9 * * 5,6,0,1')
         async def morning_stats_checker():
             """Check Battle Day stats hourly."""
             try:
@@ -232,9 +242,11 @@ class AutomatedRoutines(commands.Cog):
                     if clan["track_stats"]:
                         stat_utils.update_clan_battle_day_stats(tag, False, api_is_broken)
 
-                LOG.automation_end()
             except Exception as e:
                 LOG.exception(e)
+
+            await drain_outside_battle_warnings()
+            LOG.automation_end()
 
 
         @aiocron.crontab('30 13 * * 4,5,6,0')
@@ -297,9 +309,11 @@ class AutomatedRoutines(commands.Cog):
             try:
                 LOG.automation_start("Updating all Discord members")
                 await discord_utils.update_all_members(AutomatedRoutines.GUILD)
-                LOG.automation_end()
             except Exception as e:
                 LOG.exception(e)
+
+            await drain_outside_battle_warnings()
+            LOG.automation_end()
 
 
         @aiocron.crontab('0 10 * * 0')

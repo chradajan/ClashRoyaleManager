@@ -761,3 +761,19 @@ def create_deck_embeds(interaction: discord.Interaction,
         embeds.append(embed)
 
     return (embeds, files)
+
+
+async def send_outside_battles_warning(clash_data: ClashData, outside_battles: int):
+    """Send a message to the NewMemberInfo channel when a user joins a primary clan on a war day after using battles somewhere else.
+
+    Args:
+        clash_data: ClashData of user who joined a primary clan.
+        outside_battles: How many battles were played in other clans today.
+    """
+    embed = discord.Embed(title="Outside battles detected!",
+                          description=(f"{discord.utils.escape_markdown(clash_data['name'])} just joined "
+                                       f"{discord.utils.escape_markdown(clash_data['clan_name'])} after using {outside_battles} "
+                                       "decks in another clan today."),
+                          color=discord.Color.orange())
+
+    await CHANNEL[SpecialChannel.NewMemberInfo].send(embed=embed)

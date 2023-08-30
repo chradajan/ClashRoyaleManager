@@ -1,8 +1,8 @@
--- MySQL dump 10.13  Distrib 8.0.33, for Linux (aarch64)
+-- MySQL dump 10.13  Distrib 8.0.34, for Linux (aarch64)
 --
 -- Host: localhost    Database: ClashRoyaleManager
 -- ------------------------------------------------------
--- Server version	8.0.33-0ubuntu0.20.04.2
+-- Server version	8.0.34-0ubuntu0.20.04.1
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -335,10 +335,14 @@ CREATE TABLE `river_race_user_data` (
   `day_5_active` tinyint(1) DEFAULT NULL,
   `day_6_active` tinyint(1) DEFAULT NULL,
   `day_7_active` tinyint(1) DEFAULT NULL,
-  `day_4_blocked` enum('max_participation','previously_battled') DEFAULT NULL,
-  `day_5_blocked` enum('max_participation','previously_battled') DEFAULT NULL,
-  `day_6_blocked` enum('max_participation','previously_battled') DEFAULT NULL,
-  `day_7_blocked` enum('max_participation','previously_battled') DEFAULT NULL,
+  `day_4_locked` tinyint(1) DEFAULT NULL,
+  `day_5_locked` tinyint(1) DEFAULT NULL,
+  `day_6_locked` tinyint(1) DEFAULT NULL,
+  `day_7_locked` tinyint(1) DEFAULT NULL,
+  `day_4_outside_battles` int DEFAULT NULL,
+  `day_5_outside_battles` int DEFAULT NULL,
+  `day_6_outside_battles` int DEFAULT NULL,
+  `day_7_outside_battles` int DEFAULT NULL,
   PRIMARY KEY (`clan_affiliation_id`,`river_race_id`),
   KEY `river_race_id` (`river_race_id`),
   CONSTRAINT `river_race_user_data_ibfk_1` FOREIGN KEY (`clan_affiliation_id`) REFERENCES `clan_affiliations` (`id`),
@@ -472,4 +476,4 @@ INSERT INTO `variables` VALUES (DEFAULT, DEFAULT);
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2023-05-28  2:10:28
+-- Dump completed on 2023-08-30  7:03:50
