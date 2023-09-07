@@ -7,13 +7,13 @@ import aiocron
 import discord
 from discord.ext import commands
 
-import utils.clash_utils as clash_utils
-import utils.db_utils as db_utils
-import utils.discord_utils as discord_utils
-import utils.stat_utils as stat_utils
+from utils import clash_utils
+from utils import db_utils
+from utils import discord_utils
+from utils import stat_utils
 from log.logger import LOG
 from utils.channel_manager import CHANNEL
-from utils.custom_types import ReminderTime, SpecialChannel, StrikeType
+from utils.custom_types import ReminderTime, SpecialChannel
 from utils.exceptions import GeneralAPIError
 from utils.outside_battles_queue import UNSENT_WARNINGS
 
@@ -206,6 +206,9 @@ class AutomatedRoutines(commands.Cog):
             for tag in primary_clans:
                 db_utils.prepare_for_river_race(tag)
 
+            for tag in primary_clans:
+                db_utils.fix_anomalies(tag)
+
             LOG.automation_end()
 
 
@@ -335,11 +338,11 @@ class AutomatedRoutines(commands.Cog):
         @aiocron.crontab('0 14 * * 1')
         async def assign_strikes():
             """Assign automated strikes based on performance in most recent River Race."""
-            try:
-                LOG.automation_start("Assigning automated strikes")
-                primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+            LOG.automation_start("Assigning automated strikes")
+            primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
 
-                for tag, clan in primary_clans.items():
+            for tag, clan in primary_clans.items():
+                try:
                     if not clan["assign_strikes"]:
                         continue
 
@@ -347,90 +350,103 @@ class AutomatedRoutines(commands.Cog):
 
                     try:
                         active_members = clash_utils.get_active_members_in_clan(tag)
-                    except GeneralAPIError:
-                        LOG.warning(f"Could not get active members of {tag} for determining strikes")
+                    except Exception as e:
+                        LOG.exception(e)
                         continue
 
-                    participation_data = db_utils.get_strike_determination_data(tag)
-                    channel = CHANNEL[SpecialChannel.Strikes]
-                    message = ""
-                    mentions = ""
+                    clan_strike_data = db_utils.get_clan_strike_determination_data(tag)
 
-                    if participation_data["strike_type"] == StrikeType.Decks:
-                        message = (f"**The following members of {discord.utils.escape_markdown(clan['name'])} did not meet the minimum "
-                                   f"requirement of {participation_data['strike_threshold']} decks used per Battle Day and have "
-                                   "received a strike:\n**")
-                    elif participation_data["strike_type"] == StrikeType.Medals:
-                        message = (f"**The following members of {discord.utils.escape_markdown(clan['name'])} did not meet the minimum "
-                                   f"requirement of {participation_data['strike_threshold']} medals and have received a strike:\n**")
+                    if not clan_strike_data:
+                        LOG.warning("Could not get clan strike data, continuing to next clan")
+                        continue
 
-                    embed_one = discord.Embed()
-                    embed_two = discord.Embed()
-                    field_count = 0
+                    strikes_to_give = stat_utils.determine_strikes(clan_strike_data)
 
-                    for player_tag, user_data in participation_data["users"].items():
-                        should_receive_strike, actual, required = stat_utils.should_receive_strike(participation_data, player_tag)
+                    active_message = (f"**The following members of {discord.utils.escape_markdown(clan['name'])} did not meet the "
+                                      f"minimum requirement of {clan_strike_data['strike_threshold']} decks used per Battle Day "
+                                      "and have received a strike:\n**")
 
-                        if should_receive_strike:
-                            if player_tag in active_members:
-                                key = user_data["discord_id"] or player_tag
-                                previous_strikes, updated_strikes = db_utils.update_strikes(key, 1)
+                    inactive_message = (f"*These users would have received a strike but are not currently in the clan:*\n")
 
-                                if previous_strikes is None:
-                                    LOG.warning(f"Unable to assign strikes to {player_tag} for clan {tag}")
-                                    continue
+                    active_embeds = [discord.Embed(), discord.Embed()]
+                    active_field_count = 0
 
-                                if user_data["discord_id"] is not None:
-                                    member = discord.utils.get(channel.members, id=user_data["discord_id"])
+                    inactive_embeds = [discord.Embed(), discord.Embed()]
+                    inactive_field_count = 0
 
-                                    if member is not None:
-                                        mentions += member.mention + " "
+                    for user_strike_data in strikes_to_give:
+                        player_name = user_strike_data["name"]
+                        player_tag = user_strike_data["tag"]
+                        tracked_since = user_strike_data["tracked_since"]
+                        deck_usage = user_strike_data["deck_usage"]
 
-                                if participation_data["strike_type"] == StrikeType.Medals:
-                                    strike_field = (
-                                        f"```Strikes: {previous_strikes} -> {updated_strikes}\n"
-                                        f"Medals: {actual}/{int(required)}\n"
-                                        f"Date: {user_data['tracked_since'].strftime('%a, %b %d %H:%M UTC')}```"
-                                    )
-                                elif participation_data["strike_type"] == StrikeType.Decks:
-                                    for i, decks_used in enumerate(user_data["deck_usage"]):
-                                        if decks_used is None:
-                                            user_data["deck_usage"][i] = '-'
+                        for i, decks_used in enumerate(deck_usage):
+                            if decks_used is None:
+                                deck_usage[i] = '-'
 
-                                    strike_field = (
-                                        f"```Strikes: {previous_strikes} -> {updated_strikes}\n"
-                                        f"Thu: {user_data['deck_usage'][0]}, Fri: {user_data['deck_usage'][1]}, "
-                                        f"Sat: {user_data['deck_usage'][2]}, Sun: {user_data['deck_usage'][3]}\n"
-                                        f"Date: {user_data['tracked_since'].strftime('%a, %b %d %H:%M UTC')}```"
-                                    )
+                        if player_tag in active_members:
+                            previous_strikes, updated_strikes = db_utils.update_strikes(player_tag, 1)
 
-                                if field_count < 25:
-                                    embed_one.add_field(name=discord.utils.escape_markdown(user_data["name"]),
-                                                        value=strike_field,
-                                                        inline=False)
-                                else:
-                                    embed_two.add_field(name=discord.utils.escape_markdown(user_data["name"]),
-                                                        value=strike_field,
-                                                        inline=False)
-
-                                field_count += 1
-                            else:
-                                # TODO: Take note of non-active members that participated but did not meet participation requirements.
+                            if previous_strikes is None:
+                                LOG.warning(f"Unable to assign strikes to {player_tag} for clan {tag}")
                                 continue
 
-                    message += mentions
+                            field_value = (
+                                f"```Strikes: {previous_strikes} -> {updated_strikes}\n"
+                                f"Thu: {deck_usage[0]}, Fri: {deck_usage[1]}, "
+                                f"Sat: {deck_usage[2]}, Sun: {deck_usage[3]}\n"
+                                f"Date: {tracked_since.strftime('%a, %b %d %H:%M UTC')}```"
+                            )
 
-                    if not embed_one.fields:
-                        message = None
-                        embed_one = discord.Embed(title=(f"All members of {discord.utils.escape_markdown(clan['name'])} met the "
-                                                         "minimum participation requirements. No strikes have been assigned."),
+                            active_embeds[0 if active_field_count < 25 else 1].add_field(
+                                name=discord.utils.escape_markdown(player_name),
+                                value=field_value,
+                                inline=False
+                            )
+
+                            active_field_count += 1
+                        else:
+                            field_value = (
+                                "```"
+                                f"Thu: {deck_usage[0]}, Fri: {deck_usage[1]}, "
+                                f"Sat: {deck_usage[2]}, Sun: {deck_usage[3]}\n"
+                                f"Date: {tracked_since.strftime('%a, %b %d %H:%M UTC')}```"
+                            )
+
+                            inactive_embeds[0 if inactive_field_count < 25 else 1].add_field(
+                                name=discord.utils.escape_markdown(player_name),
+                                value=field_value,
+                                inline=False
+                            )
+
+                            inactive_field_count += 1
+
+                    if active_field_count == 0:
+                        active_message = None
+                        active_embeds[0] = discord.Embed(title=("All active members of "
+                                                                f"{discord.utils.escape_markdown(clan['name'])} met the minimum "
+                                                                "participation requirements. No strikes have been assigned."),
                                                   color=discord.Color.green())
 
-                    await channel.send(content=message, embed=embed_one)
+                    await CHANNEL[SpecialChannel.Strikes].send(content=active_message, embed=active_embeds[0])
 
-                    if field_count > 25:
-                        await channel.send(embed=embed_two)
+                    if active_field_count > 25:
+                        await CHANNEL[SpecialChannel.Strikes].send(embed=active_embeds[1])
 
-                LOG.automation_end()
-            except Exception as e:
-                LOG.exception(e)
+                    if inactive_field_count == 0:
+                        inactive_message = None
+                        inactive_embeds[0] = discord.Embed(title=(f"All inactive members of "
+                                                                  f"{discord.utils.escape_markdown(clan['name'])} that participated "
+                                                                  "in the most recent River Race met the minimum participation "
+                                                                  "requirements."),
+                                                  color=discord.Color.green())
+
+                    await CHANNEL[SpecialChannel.Strikes].send(content=inactive_message, embed=inactive_embeds[0])
+
+                    if inactive_field_count > 25:
+                        await CHANNEL[SpecialChannel.Strikes].send(embed=inactive_embeds[1])
+                except Exception as e:
+                    LOG.exception(e)
+                    continue
+
+            LOG.automation_end()

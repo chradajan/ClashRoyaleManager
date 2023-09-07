@@ -5,7 +5,7 @@ from discord import app_commands
 
 import utils.db_utils as db_utils
 from log.logger import LOG
-from utils.custom_types import AutomatedRoutine, StrikeType
+from utils.custom_types import AutomatedRoutine
 
 PRIMARY_CLANS = db_utils.get_primary_clans_enum()
 
@@ -26,21 +26,15 @@ async def set_automation_status(interaction: discord.Interaction, clan: PRIMARY_
 
 @app_commands.command()
 @app_commands.describe(clan="Which clan to update")
-@app_commands.describe(strike_type="Whether players must earn a certain number of medals or use a certain number of decks per day")
-@app_commands.describe(strike_threshold="How many medals users must earn or how many decks must be used per Battle Day")
+@app_commands.describe(strike_threshold="How many decks must be used per Battle Day")
 async def set_participation_requirements(interaction: discord.Interaction,
                                          clan: PRIMARY_CLANS,
-                                         strike_type: StrikeType,
-                                         strike_threshold: app_commands.Range[int, 0, 3600]):
+                                         strike_threshold: app_commands.Range[int, 0, 4]):
     """Update the participation requirements of a primary clan in order to not receive automated strikes."""
-    LOG.command_start(interaction, clan=clan, strike_type=strike_type, strike_threshold=strike_threshold)
-    db_utils.set_participation_requirements(clan.value, strike_type, strike_threshold)
+    LOG.command_start(interaction, clan=clan, strike_threshold=strike_threshold)
+    db_utils.set_participation_requirements(clan.value, strike_threshold)
 
-    if strike_type == StrikeType.Medals:
-        message = f"Members must now achieve {strike_threshold} medals to avoid receiving automated strikes."
-    elif strike_type == StrikeType.Decks:
-        message = f"Members must now use {strike_threshold} decks per Battle Day to avoid receiving automated strikes."
-
+    message = f"Members must now use {strike_threshold} decks per Battle Day to avoid receiving automated strikes."
     embed = discord.Embed(title=f"Participation requirements updated for {discord.utils.escape_markdown(clan.name)}",
                           description=message,
                           color=discord.Color.green())
@@ -60,8 +54,7 @@ async def check_automation_status(interaction: discord.Interaction):
             f"Reminders:   {'Enabled' if clan['send_reminders'] else 'Disabled'}\n"
             f"Stats:       {'Enabled' if clan['track_stats'] else 'Disabled'}\n"
             f"Strikes:     {'Enabled' if clan['assign_strikes'] else 'Disabled'}\n"
-            f"Strike Type: {clan['strike_type'].name}\n"
-            f"Threshold:   {clan['strike_threshold']}"
+            f"War Requirement:   {clan['strike_threshold']} decks/day"
             "```"
         )
         embed.add_field(name=discord.utils.escape_markdown(clan["name"]), value=status, inline=False)

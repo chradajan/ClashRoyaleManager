@@ -9,8 +9,7 @@ import utils.db_utils as db_utils
 from utils.custom_types import (
     ClanRole,
     SpecialChannel,
-    SpecialRole,
-    StrikeType
+    SpecialRole
 )
 
 def set_clan_role(clan_role: ClanRole, discord_role: discord.Role):
@@ -61,7 +60,6 @@ def set_primary_clan(tag: str,
                      track_stats: bool,
                      send_reminders: bool,
                      assign_strikes: bool,
-                     strike_type: StrikeType,
                      strike_threshold: int) -> str:
     """Designate the specified clan as a primary clan.
 
@@ -72,8 +70,7 @@ def set_primary_clan(tag: str,
         track_stats: Whether to track deck usage and Battle Day stats for members of this clan.
         send_reminders: Whether to send automated reminders to members of this clan.
         assign_strikes: Whether to assign automated strikes to members of this clan.
-        strike_type: Whether to assign strikes based on deck usage or medal counts.
-        strike_threshold: How many decks are needed per day or how many medals are needed in total.
+        strike_threshold: How many decks are needed per war day.
 
     Returns:
         Name of clan that was designated as a primary clan.
@@ -94,15 +91,14 @@ def set_primary_clan(tag: str,
         "track_stats": track_stats,
         "send_reminders": send_reminders,
         "assign_strikes": assign_strikes,
-        "strike_type": strike_type.value,
         "strike_threshold": strike_threshold,
         "discord_channel_id": channel.id
     }
     cursor.execute("INSERT INTO primary_clans VALUES\
                     (%(clan_id)s, %(track_stats)s, %(send_reminders)s, %(assign_strikes)s,\
-                     %(strike_type)s, %(strike_threshold)s, %(discord_channel_id)s)\
+                     %(strike_threshold)s, %(discord_channel_id)s)\
                     ON DUPLICATE KEY UPDATE track_stats = %(track_stats)s, send_reminders = %(send_reminders)s,\
-                    assign_strikes = %(assign_strikes)s, strike_type = %(strike_type)s, strike_threshold = %(strike_threshold)s,\
+                    assign_strikes = %(assign_strikes)s, strike_threshold = %(strike_threshold)s,\
                     discord_channel_id = %(discord_channel_id)s",
                    args_dict)
     cursor.execute("SELECT name FROM clans WHERE id = %s", (clan_id))

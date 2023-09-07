@@ -37,9 +37,9 @@ from utils.custom_types import (
     PrimaryClan,
     PvPBattle,
     ReminderTime,
+    RiverRaceUserData,
     SpecialChannel,
     SpecialRole,
-    StrikeType,
 )
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 from utils.outside_battles_queue import UNSENT_WARNINGS
@@ -561,7 +561,6 @@ def get_primary_clans() -> List[PrimaryClan]:
             "track_stats": clan["track_stats"],
             "send_reminders": clan["send_reminders"],
             "assign_strikes": clan["assign_strikes"],
-            "strike_type": StrikeType(clan["strike_type"]),
             "strike_threshold": clan["strike_threshold"],
             "discord_channel_id": clan["discord_channel_id"]
         }
@@ -1829,6 +1828,44 @@ def time_in_clan(player_tag: str, clans: List[str]) -> datetime.timedelta:
     return time_in_clans
 
 
+def get_clan_times(clan_affiliation_id: int) -> List[Tuple[datetime.datetime, Union[datetime.datetime, None]]]:
+    """Get a list of time periods that a user was in a clan.
+
+    Args:
+        clan_affiliation_id: ID of clan affiliation to check.
+
+    Return:
+        List of time ranges that user was in the clan. If they are currently in the clan, the end time of one entry will be None.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT * FROM clan_time WHERE clan_affiliation_id = %s", (clan_affiliation_id))
+    clan_times = [(time_range["start"], time_range["end"]) for time_range in cursor.fetchall()]
+    clan_times.sort(key=lambda time_range: time_range[0])
+    database.close()
+    return clan_times
+
+
+def get_name_and_tag_from_affiliation(clan_affiliation_id: int) -> Union[Tuple[str, str], Tuple[None, None]]:
+    """Get a user's player name and tag from their clan affiliation id.
+
+    Args:
+        clan_affiliation_id: Clan affiliation ID to get user data from.
+
+    Returns:
+        Tuple of the user's name and tag.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT name, tag FROM users WHERE id = (SELECT user_id FROM clan_affiliations WHERE id = %s)",
+                   (clan_affiliation_id))
+    database.close()
+    query_result = cursor.fetchone()
+
+    if query_result is None:
+        return (None, None)
+
+    return (query_result["name"], query_result["tag"])
+
+
 ########################################
 #    ____  _        _ _                #
 #   / ___|| |_ _ __(_) | _____  ___    #
@@ -1838,7 +1875,42 @@ def time_in_clan(player_tag: str, clans: List[str]) -> datetime.timedelta:
 #                                      #
 ########################################
 
-def get_strike_determination_data(tag: str) -> ClanStrikeInfo:
+def correct_reset_times(reset_times: List[Union[datetime.datetime, None]]) -> List[datetime.datetime]:
+    """Given a clan's reset times, fill in any missing days.
+
+    Args:
+        reset_times: List of reset times in order to correct.
+
+    Returns:
+        List of times with missing entries filled in, or empty list if not possible.
+    """
+    times = reset_times.copy()
+
+    if not all(times):
+        if not any(times):
+            return []
+
+        for i in range(len(times)):
+            if not times[i]:
+                next_index = (i + 1) % len(times)
+
+                while next_index != i:
+                    if times[next_index]:
+                        diff = i - next_index
+
+                        if diff > 0:
+                            times[i] = times[next_index] + datetime.timedelta(days=diff)
+                        else:
+                            times[i] = times[next_index] - datetime.timedelta(days=-diff)
+                    else:
+                        next_index = (next_index + 1) % len(times)
+
+                if next_index == i:
+                    return []
+
+    return times
+
+def get_clan_strike_determination_data(tag: str) -> Union[ClanStrikeInfo, None]:
     """Get data needed from a clan's most recent River Race to determine who should receive a strike.
 
     Args:
@@ -1852,35 +1924,41 @@ def get_strike_determination_data(tag: str) -> ClanStrikeInfo:
 
     database, cursor = get_database_connection()
     strike_info: ClanStrikeInfo = {}
+    strike_info["river_race_id"] = river_race_id
 
-    cursor.execute("SELECT strike_type, strike_threshold FROM primary_clans WHERE clan_id = %s", (clan_id))
+    cursor.execute("SELECT strike_threshold FROM primary_clans WHERE clan_id = %s", (clan_id))
     query_result = cursor.fetchone()
-    strike_info["strike_type"] = StrikeType(query_result["strike_type"])
     strike_info["strike_threshold"] = query_result["strike_threshold"]
 
-    cursor.execute("SELECT completed_saturday, day_4, day_5, day_6, day_7 FROM river_races WHERE id = %s", (river_race_id))
+    cursor.execute("SELECT completed_saturday, day_3, day_4, day_5, day_6, day_7 FROM river_races WHERE id = %s", (river_race_id))
     query_result = cursor.fetchone()
     strike_info["completed_saturday"] = query_result["completed_saturday"]
-    strike_info["reset_times"] = [query_result[day_key] for day_key in ["day_4", "day_5", "day_6", "day_7"]]
-
-    cursor.execute("SELECT discord_id, name, tag, tracked_since, medals, day_4, day_5, day_6, day_7 FROM river_race_user_data\
-                    INNER JOIN clan_affiliations ON river_race_user_data.clan_affiliation_id = clan_affiliations.id\
-                    INNER JOIN users ON clan_affiliations.user_id = users.id\
-                    WHERE river_race_id = %s AND tracked_since IS NOT NULL",
-                   (river_race_id))
+    reset_times: List[datetime.datetime] = [query_result[day_key] for day_key in ["day_3", "day_4", "day_5", "day_6", "day_7"]]
     database.close()
-    strike_info["users"] = {}
 
-    for user in cursor:
-        strike_info["users"][user["tag"]] = {
-            "discord_id": user["discord_id"],
-            "name": user["name"],
-            "tracked_since": user["tracked_since"],
-            "medals": user["medals"],
-            "deck_usage": [user[day_key] for day_key in ["day_4", "day_5", "day_6", "day_7"]]
-        }
+    reset_times = correct_reset_times(reset_times)
 
+    if not reset_times:
+        LOG.warning("Unable to correct missing reset time(s)")
+        return None
+
+    strike_info["reset_times"] = reset_times
     return strike_info
+
+
+def get_river_race_user_data(river_race_id: int) -> List[RiverRaceUserData]:
+    """Get a list of all river_race_user_data entries for the specified River Race.
+
+    Args:
+        river_race_id: ID of race to get entries for.
+
+    Returns:
+        Unmodified river_race_user_data entries from database.
+    """
+    database, cursor = get_database_connection()
+    cursor.execute("SELECT * FROM river_race_user_data WHERE river_race_id = %s", (river_race_id))
+    database.close()
+    return [river_race_user_data_row for river_race_user_data_row in cursor.fetchall()]
 
 
 def update_strikes(search_key: Union[int, str], delta: int) -> Tuple[Union[int, None], Union[int, None]]:
@@ -1999,6 +2077,121 @@ def remedy_deck_usage(tag: str,
             query = (f"UPDATE river_race_user_data SET {day_key} = %s, last_check = last_check "
                      "WHERE clan_affiliation_id = %s AND river_race_id = %s")
             cursor.execute(query, (actual_decks_used_today, clan_affiliation_id, river_race_id))
+
+    database.commit()
+    database.close()
+
+
+def fix_anomalies(tag: str):
+    """After a River Race finishes, attempt to fix any anomalies caused by API issues.
+
+    Args:
+        tag: Tag of clan to attempt to fix.
+    """
+    river_race_id, _, _, _ = get_clan_river_race_ids(tag, 1)
+    river_race_user_data = get_river_race_user_data(river_race_id)
+    database, cursor = get_database_connection()
+    day_keys = ["day_4", "day_5", "day_6", "day_7"]
+
+    cursor.execute("SELECT day_4, day_5, day_6, day_7 FROM river_races WHERE id = %s", (river_race_id))
+    query_result = cursor.fetchone()
+    reset_times: List[datetime.datetime] = [query_result[day_key] for day_key in day_keys]
+    reset_times = correct_reset_times(reset_times)
+
+    if not reset_times:
+        LOG.warning("Unable to correct missing reset time(s)")
+        return
+
+    for user_data in river_race_user_data:
+        for day_key in day_keys:
+            if user_data[day_key] is None:
+                user_data[day_key] = 0
+
+        deck_usage_sum = user_data["day_4"] + user_data["day_5"] + user_data["day_6"] + user_data["day_7"]
+
+        stats_sum = (user_data["regular_wins"] +
+                     user_data["regular_losses"] +
+                     user_data["special_wins"] +
+                     user_data["special_losses"] +
+                     user_data["duel_wins"] +
+                     user_data["duel_losses"] +
+                     user_data["boat_wins"] +
+                     user_data["boat_losses"])
+
+        if deck_usage_sum < stats_sum:
+            clan_affiliation_id = user_data["clan_affiliation_id"]
+
+            LOG.info(log_message("Mismatched daily deck usage and stats usage",
+                                 clan_affiliation_id=clan_affiliation_id,
+                                 river_race_id=river_race_id,
+                                 deck_usage_sum=deck_usage_sum,
+                                 stats_sum=stats_sum))
+
+            actual_medals = user_data["medals"]
+            calculated_medals = ((200 * (user_data["regular_wins"] + user_data["special_wins"])) +
+                                 (100 * (user_data["regular_losses"] + user_data["special_losses"] + user_data["duel_losses"])) +
+                                 (250 * user_data["duel_wins"]) +
+                                 (125 * user_data["boat_wins"]) +
+                                 (75 * user_data["boat_losses"]))
+
+            if actual_medals != calculated_medals:
+                LOG.warning(log_message("Incorrect medals data, cannot proceed",
+                                        actual_medals=actual_medals,
+                                        calculated_medals=calculated_medals))
+                continue
+
+            cursor.execute("SELECT time FROM boat_battles WHERE clan_affiliation_id = %s AND river_race_id = %s",
+                           (clan_affiliation_id, river_race_id))
+            boat_battles: List[datetime.datetime] = [battle["time"] for battle in cursor]
+
+            cursor.execute("SELECT time FROM pvp_battles WHERE clan_affiliation_id = %s AND river_race_id = %s",
+                           (clan_affiliation_id, river_race_id))
+            pvp_battles: List[datetime.datetime] = [battle["time"] for battle in cursor]
+            all_battles = sorted(boat_battles + pvp_battles)
+
+            if len(all_battles) != stats_sum:
+                LOG.warning("More battles logged than stats summary adds up to")
+                continue
+
+            sorted_battles: List[List[datetime.datetime]] = [[], [], [], []]
+
+            for i in range(4):
+                while all_battles and all_battles[0] < reset_times[i]:
+                    sorted_battles[i].append(all_battles[0])
+                    all_battles.pop(0)
+
+            use_calculated_deck_usage = True
+
+            for i, day_key in enumerate(day_keys):
+                calculated_daily_usage = len(sorted_battles[i])
+
+                if (calculated_daily_usage < user_data[day_key]) or (calculated_daily_usage > 4):
+                    LOG.warning(log_message("Invalid calculated daily usage",
+                                            calculated_daily_usage=calculated_daily_usage,
+                                            api_daily_usage=user_data[day_key],
+                                            day_key=day_key))
+                    use_calculated_deck_usage = False
+                    break
+
+            if use_calculated_deck_usage:
+                for i, day_key in enumerate(day_keys):
+                    calculated_daily_usage = len(sorted_battles[i])
+
+                    LOG.info(log_message("Correcting daily usage",
+                                         prev=user_data[day_key],
+                                         new=calculated_daily_usage,
+                                         day_key=day_key))
+
+                    query = (f"UPDATE river_race_user_data SET {day_key} = %s, last_check = last_check "
+                             "WHERE clan_affiliation_id = %s AND river_race_id = %s")
+                    cursor.execute(query, (calculated_daily_usage, clan_affiliation_id, river_race_id))
+
+        elif deck_usage_sum > stats_sum:
+            LOG.warning(log_message("Deck usage sum exceeds stats sum",
+                                    clan_affiliation_id=clan_affiliation_id,
+                                    river_race_id=river_race_id,
+                                    deck_usage_sum=deck_usage_sum,
+                                    stats_sum=stats_sum))
 
     database.commit()
     database.close()
@@ -2146,18 +2339,17 @@ def set_automated_routine(tag: str, routine: AutomatedRoutine, status: bool):
     database.close()
 
 
-def set_participation_requirements(tag: str, strike_type: StrikeType, strike_threshold: int):
+def set_participation_requirements(tag: str, strike_threshold: int):
     """Update a primary clan's participation requirements.
     
     Args:
         tag: Tag of clan to change participation requirements of.
-        strike_type: What kind of participation requirement to change to.
-        strike_threshold: Number of medals/decks needed for the specified strike type.
+        strike_threshold: Number of decks that must be used each war day.
     """
     database, cursor = get_database_connection()
-    cursor.execute("UPDATE primary_clans SET strike_type = %s, strike_threshold = %s\
+    cursor.execute("UPDATE primary_clans SET strike_threshold = %s\
                     WHERE clan_id = (SELECT id FROM clans WHERE tag = %s)",
-                   (strike_type.value, strike_threshold, tag))
+                   (strike_threshold, tag))
     database.commit()
     database.close()
 

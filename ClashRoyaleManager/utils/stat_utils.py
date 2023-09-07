@@ -7,7 +7,15 @@ from typing import Dict, List, Tuple, Union
 import utils.clash_utils as clash_utils
 import utils.db_utils as db_utils
 from log.logger import LOG, log_message
-from utils.custom_types import Battles, BattleStats, ClanStrikeInfo, DatabaseRiverRaceClan, PredictedOutcome, RiverRaceClan, StrikeType
+from utils.custom_types import (
+    Battles,
+    BattleStats,
+    ClanStrikeInfo,
+    DatabaseRiverRaceClan,
+    PredictedOutcome,
+    RiverRaceClan,
+    UserStrikeData
+)
 from utils.exceptions import GeneralAPIError
 
 def update_clan_battle_day_stats(tag: str, post_race: bool, api_is_broken: bool):
@@ -108,127 +116,120 @@ def save_river_race_clans_info(tag: str, post_race: bool):
     db_utils.update_current_season_river_race_clans(data_to_save)
 
 
-def should_receive_strike(participation_data: ClanStrikeInfo, tag: str) -> Tuple[bool, int, int]:
-    """Determine whether a user should receive a strike based on their participation in the clan's most recent River Race.
+def determine_strikes(clan_strike_data: ClanStrikeInfo) -> List[UserStrikeData]:
+    """Determine which users in the specified clan should receive strikes.
 
     Args:
-        participation_data: Relevant strike determination data for a clan.
-        tag: Tag of the user in the clan to determine whether or not they should receive a strike.
+        clan_strike_data: Data of clan to determine strikes for.
+
     Returns:
-        Tuple of whether user should receive a strike, number of medals earned/decks used, and number of medals/decks required.
+        List of user data for users that should receive a strike.
     """
-    def deck_based_participation(days_tracked: int,
-                                 deck_usage: List[Union[int, None]],
-                                 decks_required: int,
-                                 completed_saturday: bool) -> Tuple[bool, int, int]:
-        """Determine if a user should receive a strike based on their deck usage.
+    river_race_user_data = db_utils.get_river_race_user_data(clan_strike_data["river_race_id"])
+    reset_times = clan_strike_data["reset_times"]
+    day_keys = ["day_3", "day_4", "day_5", "day_6", "day_7"]
+    max_day_index = 3 if clan_strike_data["completed_saturday"] else 4
+    strikes: List[UserStrikeData] = []
 
-        Args:
-            days_tracked: How many Battle Days the user was in the clan for.
-            deck_usage: Number of decks used each Battle Day. Index 0 is first day, index 3 is final day.
-            decks_required: Number of decks required to be used each day.
-            completed_saturday: Whether the clan crossed the finish line a day early.
-        
-        Returns:
-            Tuple of whether user should receive a strike, how many decks they used, and how many were expected of them."""
-        expected_decks = days_tracked * decks_required
+    for user_data in river_race_user_data:
+        should_receive_strike = False
 
-        if completed_saturday:
-            expected_decks -= decks_required
+        # Skip any users that were never a part of the clan in this River Race
+        if user_data["tracked_since"] is None:
+            continue
 
-        index = 2 if completed_saturday else 3
-        decks_used = 0
+        # Determine which day to start evaluating from based on when the bot started tracking them
+        first_participation_day = 1
 
-        while days_tracked > 0 and index >= 0:
-            if deck_usage[index] is None:
-                LOG.warning(f"No deck usage detected at index {index}")
-                expected_decks -= decks_required
-            else:
-                decks_used += deck_usage[index]
+        for day_index, reset_time in enumerate(reset_times[1:], 1):
+            if user_data["tracked_since"] < reset_time:
+                first_participation_day = day_index
+                break
 
-            index -= 1
-            days_tracked -= 1
+        # Iterate through days that user was in the clan and determine if they met their minimum requirement
+        for day_index in range(first_participation_day, max_day_index + 1):
+            day_key = day_keys[day_index]
+            decks_used = user_data[day_key]
 
-        return (decks_used < expected_decks, decks_used, expected_decks)
+            if decks_used is None:
+                LOG.warning(log_message("Expected deck usage but received None",
+                                        day_key=day_key,
+                                        clan_affiliation_id=user_data["clan_affiliation_id"]))
+                continue
 
+            if decks_used >= clan_strike_data["strike_threshold"]:
+                continue
 
-    def medal_based_participation(days_tracked: int,
-                                  medals_earned: int,
-                                  medals_required: int,
-                                  completed_saturday: bool) -> Tuple[bool, int, int]:
-        """Determine if a user should receive a strike based on how many medals they earned.
+            LOG.info(log_message("Checking for deck usage exemption",
+                                 day_key=day_key,
+                                 decks_used=decks_used,
+                                 clan_affiliation_id=user_data["clan_affiliation_id"]))
 
-        Args
-            days_tracked: How many Battle Days the user was in the clan for.
-            medals_earned: How many medals they earned.
-            medals_required: How many medals are required to not get a strike.
-            completed_saturday: Whether the clan crossed teh finish line a day early.
+            # Did not meet minimum minimum deck usage
+            # First check if they were locked out due to clan reaching participation cap
+            if user_data[day_key + "_locked"]:
+                LOG.info("User was locked out")
+                continue
 
-        Returns:
-            Tuple of whether the user received a strike, how many medals they earned, and how many were expected of them.
-        """
-        medals_required_per_day = medals_required / 4
-        actual_required = medals_required_per_day * days_tracked
+            # Not locked out, so check if they used outside battles but still had decks left to use in primary clan
+            outside_battles = user_data[day_key + "_outside_battles"]
 
-        if completed_saturday:
-            actual_required -= medals_required_per_day
+            if outside_battles is not None:
+                unused_decks = 4 - (outside_battles + decks_used)
 
-        return (medals_earned < actual_required, medals_earned, actual_required)
+                if unused_decks == 0:
+                    LOG.info("Outside battles detected but user had no remaining decks")
+                    continue
 
+            # Don't give strike if they were not in the clan this day
+            was_in_clan = False
 
-    if tag not in participation_data["users"]:
-        LOG.warning(f"Missing user {tag} in clan participation data")
-        return (None, None, None)
+            if not user_data[day_key + "_active"] and decks_used == 0:
+                clan_times = db_utils.get_clan_times(user_data["clan_affiliation_id"])
 
-    reset_times = participation_data["reset_times"]
+                if not clan_times:
+                    LOG.warning("Expected clan times but received empty list")
+                    continue
 
-    # Attempt to correct any missing reset time data by adding/subtracting from adjacent reset times
-    if not all(reset_times):
-        LOG.warning("Missing daily reset time, attempting to correct")
+                day_start = reset_times[day_index - 1]
+                day_end = reset_times[day_index]
 
-        if not any(reset_times):
-            LOG.error("No daily reset times detected")
-            return (None, None, None)
-        else:
-            for i in range(4):
-                if not reset_times[i]:
-                    next_index = (i + 1) % 4
+                for clan_time_start, clan_time_end in clan_times:
+                    if ((clan_time_start < day_start and clan_time_end is None) or
+                        (clan_time_start < day_start < clan_time_end) or
+                        (day_start < clan_time_start < day_end)):
+                        LOG.info(log_message("User was active in clan on this day",
+                                             day_start=day_start,
+                                             day_end=day_end,
+                                             clan_time_start=clan_time_start,
+                                             clan_time_end=clan_time_end))
+                        was_in_clan = True
+                        break
 
-                    while(next_index != i):
-                        if reset_times[next_index]:
-                            diff = i - next_index
-                            if diff > 0:
-                                reset_times[i] = reset_times[next_index] + datetime.timedelta(days=diff)
-                            else:
-                                reset_times[i] = reset_times[next_index] - datetime.timedelta(days=-diff)
-                        else:
-                            next_index = (next_index + 1) % 4
+                if not was_in_clan:
+                    continue
 
-                    if next_index == i:
-                        LOG.error("Could not correct missing reset time")
-                        return (None, None, None)
-
-    # Determine how many days the user was in the clan after initially joining
-    user = participation_data["users"][tag]
-    tracked_since = user["tracked_since"]
-    days_tracked = 1
-
-    for count, reset_time in enumerate(reset_times):
-        if tracked_since <= reset_time:
-            days_tracked = 4 - count
+            # No valid excuses found, so assign strike
+            should_receive_strike = True
             break
 
-    # Determine whether user should receive a strike based on strike type and their participation
-    if participation_data["strike_type"] == StrikeType.Decks:
-        return deck_based_participation(days_tracked,
-                                        user["deck_usage"],
-                                        participation_data["strike_threshold"],
-                                        participation_data["completed_saturday"])
-    elif participation_data["strike_type"] == StrikeType.Medals:
-        return medal_based_participation(days_tracked,
-                                         user["medals"],
-                                         participation_data["strike_threshold"],
-                                         participation_data["completed_saturday"])
+        if should_receive_strike:
+            name, tag = db_utils.get_name_and_tag_from_affiliation(user_data["clan_affiliation_id"])
+
+            if name is None:
+                LOG.warning("Unable to get name and tag from affiliation id")
+                continue
+
+            strikes.append(
+                {
+                    "name": name,
+                    "tag": tag,
+                    "tracked_since": user_data["tracked_since"],
+                    "deck_usage": [user_data[key] for key in ["day_4", "day_5", "day_6", "day_7"]]
+                }
+            )
+
+    return strikes
 
 
 def average_medals_per_deck(win_rate: float) -> float:

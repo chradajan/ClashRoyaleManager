@@ -47,12 +47,6 @@ class SpecialChannel(Enum):
     Strikes = "strikes"
 
 
-class StrikeType(Enum):
-    """Enum of criteria used to determine who receives automated strikes."""
-    Decks = "decks"
-    Medals = "medals"
-
-
 class AutomatedRoutine(Enum):
     """Enum of automated routines that can be toggled for primary clans."""
     Reminders = "send_reminders"
@@ -84,7 +78,6 @@ class PrimaryClan(TypedDict):
     track_stats: bool
     send_reminders: bool
     assign_strikes: bool
-    strike_type: StrikeType
     strike_threshold: int
     discord_channel_id: int
 
@@ -162,22 +155,61 @@ class DecksReport(TypedDict):
     locked_out_active_members: List[Tuple[PlayerTag, PlayerName, DecksRemaining]]
 
 
-class UserStrikeInfo(TypedDict):
-    """Dictionary of data needed to determine whether a user should receive a strike."""
-    discord_id: int
-    name: PlayerName
-    tracked_since: datetime.datetime
-    medals: int
-    deck_usage: List[Union[int, None]]
-
-
 class ClanStrikeInfo(TypedDict):
     """Dictionary of data needed to determine who in a clan should receive a strike."""
-    strike_type: StrikeType
     strike_threshold: int
     completed_saturday: bool
     reset_times: List[datetime.datetime]
-    users: Dict[PlayerTag, UserStrikeInfo]
+    river_race_id: int
+
+
+class UserStrikeData(TypedDict):
+    """Dictionary containing data about a user that is receiving an automated strike."""
+    name: PlayerName
+    tag: PlayerTag
+    tracked_since: datetime.datetime
+    deck_usage: List[Union[int, None]]
+
+
+class RiverRaceUserData(TypedDict):
+    """Dictionary representing row from river_race_user_data table."""
+    clan_affiliation_id: int
+    river_race_id: int
+    last_check: datetime.datetime
+    tracked_since: Union[datetime.datetime, None]
+    medals: int
+    regular_wins: int
+    regular_losses: int
+    special_wins: int
+    special_losses: int
+    duel_wins: int
+    duel_losses: int
+    series_wins: int
+    series_losses: int
+    boat_wins: int
+    boat_losses: int
+    day_1: Union[int, None]
+    day_2: Union[int, None]
+    day_3: Union[int, None]
+    day_4: Union[int, None]
+    day_5: Union[int, None]
+    day_6: Union[int, None]
+    day_7: Union[int, None]
+    day_1_active: Union[bool, None]
+    day_2_active: Union[bool, None]
+    day_3_active: Union[bool, None]
+    day_4_active: Union[bool, None]
+    day_5_active: Union[bool, None]
+    day_6_active: Union[bool, None]
+    day_7_active: Union[bool, None]
+    day_4_locked: Union[bool, None]
+    day_5_locked: Union[bool, None]
+    day_6_locked: Union[bool, None]
+    day_7_locked: Union[bool, None]
+    day_4_outside_battles: Union[int, None]
+    day_5_outside_battles: Union[int, None]
+    day_6_outside_battles: Union[int, None]
+    day_7_outside_battles: Union[int, None]
 
 
 class KickData(TypedDict):

@@ -6,7 +6,7 @@ from discord import app_commands
 import utils.clash_utils as clash_utils
 import utils.setup_utils as setup_utils
 from log.logger import LOG
-from utils.custom_types import ClanRole, SpecialChannel, SpecialRole, StrikeType
+from utils.custom_types import ClanRole, SpecialChannel, SpecialRole
 from utils.exceptions import GeneralAPIError, ResourceNotFound
 
 
@@ -93,8 +93,7 @@ async def register_special_channel(interaction: discord.Interaction,
 @app_commands.describe(track_stats="Whether to track deck usage and Battle Day stats of clan")
 @app_commands.describe(send_reminders="Whether to send automated reminders to members of the clan on Battle Days")
 @app_commands.describe(assign_strikes="Whether to assign automated strikes to members of the clan based on low participation")
-@app_commands.describe(strike_type="Whether to give strikes based on insufficient deck usage or low medal counts")
-@app_commands.describe(strike_threshold="Decks needed per Battle Day or total medals needed to avoid receiving a strike")
+@app_commands.describe(required_decks="Decks needed per war day")
 async def register_primary_clan(interaction: discord.Interaction,
                                 tag: str,
                                 role: discord.Role,
@@ -102,8 +101,7 @@ async def register_primary_clan(interaction: discord.Interaction,
                                 track_stats: bool,
                                 send_reminders: bool,
                                 assign_strikes: bool,
-                                strike_type: StrikeType,
-                                strike_threshold: app_commands.Range[int, 0, 3600]):
+                                required_decks: app_commands.Range[int, 0, 4]):
     """Designate a clan as a primary clan."""
     processed_tag = clash_utils.process_clash_royale_tag(tag)
     
@@ -117,8 +115,7 @@ async def register_primary_clan(interaction: discord.Interaction,
                                                 track_stats,
                                                 send_reminders,
                                                 assign_strikes,
-                                                strike_type,
-                                                strike_threshold)
+                                                required_decks)
             embed = discord.Embed(title=f"{name} has been successfully registered as a primary clan.",
                                   color=discord.Color.green())
         except GeneralAPIError:
