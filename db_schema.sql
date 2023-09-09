@@ -226,7 +226,6 @@ CREATE TABLE `primary_clans` (
   `track_stats` tinyint(1) NOT NULL,
   `send_reminders` tinyint(1) NOT NULL,
   `assign_strikes` tinyint(1) NOT NULL,
-  `strike_type` enum('decks','medals') NOT NULL,
   `strike_threshold` int NOT NULL,
   `discord_channel_id` bigint unsigned NOT NULL,
   PRIMARY KEY (`clan_id`),
@@ -476,4 +475,4 @@ INSERT INTO `variables` VALUES (DEFAULT, DEFAULT);
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2023-08-30  7:03:50
+-- Dump completed on 2023-09-09  4:17:54
