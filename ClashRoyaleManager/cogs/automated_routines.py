@@ -19,8 +19,11 @@ from utils.outside_battles_queue import UNSENT_WARNINGS
 
 async def drain_outside_battle_warnings():
     """Send a warning message for each member who's joined after using battles in another clan."""
+    primary_clans = {clan["tag"]: clan for clan in db_utils.get_primary_clans()}
+
     for (clash_data, outside_battles) in UNSENT_WARNINGS:
-        await discord_utils.send_outside_battles_warning(clash_data, outside_battles)
+        if primary_clans[clash_data["clan_tag"]]["assign_strikes"]:
+            await discord_utils.send_outside_battles_warning(clash_data, outside_battles)
 
     UNSENT_WARNINGS.clear()
 
@@ -129,7 +132,7 @@ class AutomatedRoutines(commands.Cog):
 
                     usage_sum = sum([decks_used_today for decks_used_today, _ in deck_usage.values()])
 
-                    if usage_sum > AutomatedRoutines.LAST_CHECK_SUM[tag]:
+                    if usage_sum < AutomatedRoutines.LAST_CHECK_SUM[tag]:
                         deck_usage = AutomatedRoutines.LAST_DECK_USAGE[tag]
 
                     AutomatedRoutines.POST_RESET_USAGE[tag] = deck_usage
