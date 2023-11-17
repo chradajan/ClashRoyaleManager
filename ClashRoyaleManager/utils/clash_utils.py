@@ -1002,7 +1002,7 @@ def battled_for_other_clan(player_tag: str, clan_tag: str, time: datetime.dateti
     for battle in battle_log:
         battle_time = battletime_to_datetime(battle["battleTime"])
 
-        if ((battle["type"].startswith("riverRace") or battle["type"] == "boatBattle")
+        if ((battle["type"].startswith("riverRace") or (battle["type"] == "boatBattle" and battle["boatBattleSide"] == "attacker"))
                 and time < battle_time
                 and battle["team"][0]["clan"]["tag"] != clan_tag):
             used_battles += 1
