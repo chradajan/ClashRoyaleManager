@@ -234,11 +234,17 @@ def get_clash_royale_user_data(tag: str) -> ClashData:
     # Workaround for broken API.
     if not api_is_fixed:
         for card in json_obj["cards"]:
+            if (card["maxLevel"] == 0) or (card["name"] == "null"):
+                continue
+
             card_level = max_card_level - (card["maxLevel"] + 1 - card["level"])
             clash_data["cards"][card_level] += 1
             clash_data["found_cards"] += 1
     else:
         for card in json_obj["cards"]:
+            if (card["maxLevel"] == 0) or (card["name"] == "null"):
+                continue
+
             card_level = max_card_level - (card["maxLevel"] - card["level"])
             clash_data["cards"][card_level] += 1
             clash_data["found_cards"] += 1
